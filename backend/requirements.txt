@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+beautifulsoup4
+requests
+aiohttp
+selenium
+webdriver-manager
+python-dotenv
+pydantic

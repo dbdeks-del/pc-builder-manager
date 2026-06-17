@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PC Builder Manager</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #1a1d27;
+      --bg3: #22263a;
+      --border: #2e3350;
+      --text: #e8eaf6;
+      --text2: #9095b0;
+      --accent: #6c63ff;
+      --accent2: #a89cff;
+      --green: #4caf87;
+      --orange: #f5a623;
+      --red: #e05c5c;
+      --blue: #4a9eff;
+      --card-radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 0;
+      position: fixed;
+      height: 100vh;
+      z-index: 10;
+    }
+
+    .logo {
+      padding: 0 20px 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .logo h1 { font-size: 16px; font-weight: 700; }
+    .logo span { font-size: 11px; color: var(--text2); }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 0;
+      font-size: 13px;
+      color: var(--text2);
+      transition: all 0.15s;
+      border-left: 3px solid transparent;
+    }
+
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.active { background: rgba(108,99,255,0.15); color: var(--accent2); border-left-color: var(--accent); }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* Main */
+    .main {
+      margin-left: 220px;
+      flex: 1;
+      padding: 28px;
+      min-height: 100vh;
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-header {
+      margin-bottom: 24px;
+    }
+
+    .page-header h2 { font-size: 22px; font-weight: 700; }
+    .page-header p { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
+    /* Cards */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      padding: 20px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    /* Grid layouts */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+
+    /* Stat cards */
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-icon { font-size: 28px; margin-bottom: 8px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--accent2); }
+    .stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: #7c74ff; }
+    .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg3); color: var(--text); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+    .btn-danger:hover { background: rgba(224,92,92,0.1); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-green { background: var(--green); color: white; }
+    .btn-green:hover { background: #3d9e72; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; color: var(--text2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+    td { padding: 12px 12px; border-bottom: 1px solid rgba(46,51,80,0.5); vertical-align: middle; }
+    tr:hover td { background: rgba(108,99,255,0.05); }
+
+    /* Category badges */
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-cpu { background: rgba(74,158,255,0.2); color: var(--blue); }
+    .badge-gpu { background: rgba(108,99,255,0.2); color: var(--accent2); }
+    .badge-ram { background: rgba(76,175,135,0.2); color: var(--green); }
+    .badge-ssd { background: rgba(245,166,35,0.2); color: var(--orange); }
+    .badge-hdd { background: rgba(245,166,35,0.15); color: #e8a020; }
+    .badge-motherboard { background: rgba(224,92,92,0.2); color: var(--red); }
+    .badge-psu { background: rgba(150,150,200,0.2); color: #a0a8cc; }
+    .badge-case { background: rgba(100,200,150,0.2); color: #64c896; }
+    .badge-cooler { background: rgba(100,180,220,0.2); color: #64b4dc; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      width: 480px;
+      max-width: 95vw;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+
+    /* Form */
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; font-weight: 600; }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus { border-color: var(--accent); }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* Alerts */
+    .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    .alert-error { background: rgba(224,92,92,0.1); border: 1px solid rgba(224,92,92,0.3); color: #ff8080; }
+    .alert-warning { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.3); color: #f5c35a; }
+    .alert-ok { background: rgba(76,175,135,0.1); border: 1px solid rgba(76,175,135,0.3); color: #6eddaa; }
+    .alert-info { background: rgba(74,158,255,0.1); border: 1px solid rgba(74,158,255,0.3); color: #7ab8ff; }
+
+    .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .alert-body { flex: 1; }
+    .alert-body strong { display: block; margin-bottom: 2px; }
+    .alert-body small { color: inherit; opacity: 0.8; font-size: 12px; }
+
+    /* Price cards */
+    .price-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+
+    .price-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .price-card-source { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text2); margin-bottom: 6px; }
+    .price-card-title { font-size: 12px; margin-bottom: 8px; line-height: 1.4; }
+    .price-card-price { font-size: 18px; font-weight: 700; color: var(--accent2); }
+    .price-card-link { font-size: 11px; color: var(--blue); text-decoration: none; margin-top: 6px; display: block; }
+    .price-card-link:hover { text-decoration: underline; }
+
+    .source-danawa { border-left: 3px solid #e74c3c; }
+    .source-bunjang { border-left: 3px solid #f39c12; }
+    .source-joongna { border-left: 3px solid #3498db; }
+
+    /* PC value summary */
+    .value-summary {
+      background: linear-gradient(135deg, rgba(108,99,255,0.15), rgba(74,158,255,0.1));
+      border: 1px solid rgba(108,99,255,0.3);
+      border-radius: var(--card-radius);
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .value-summary .label { font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+    .value-summary .amount { font-size: 36px; font-weight: 700; color: var(--accent2); }
+    .value-summary .range { font-size: 13px; color: var(--text2); margin-top: 6px; }
+
+    /* Loading */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px;
+      color: var(--text2);
+      font-size: 13px;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Bottleneck bar */
+    .bottleneck-bar {
+      height: 8px;
+      background: var(--bg3);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+
+    .bottleneck-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s;
+    }
+
+    .fill-ok { background: var(--green); }
+    .fill-warn { background: var(--orange); }
+    .fill-danger { background: var(--red); }
+
+    /* Score ring */
+    .score-display {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px;
+      background: var(--bg3);
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+
+    .score-ring {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .score-ring.good { background: rgba(76,175,135,0.2); color: var(--green); border: 2px solid var(--green); }
+    .score-ring.ok { background: rgba(245,166,35,0.2); color: var(--orange); border: 2px solid var(--orange); }
+    .score-ring.bad { background: rgba(224,92,92,0.2); color: var(--red); border: 2px solid var(--red); }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s;
+      pointer-events: none;
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { border-color: var(--green); color: var(--green); }
+    .toast.error { border-color: var(--red); color: var(--red); }
+
+    /* Empty state */
+    .empty {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text2);
+    }
+
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--text2);
+      border: 1px solid transparent;
+    }
+    .tab:hover { background: var(--bg3); color: var(--text); }
+    .tab.active { background: rgba(108,99,255,0.2); color: var(--accent2); border-color: rgba(108,99,255,0.4); }
+
+    /* Category buttons */
+    .cat-btn {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .cat-btn:hover { background: rgba(108,99,255,0.15); color: var(--text); border-color: var(--accent); }
+    .cat-btn.selected { background: rgba(108,99,255,0.25); color: var(--accent2); border-color: var(--accent); }
+
+    /* DB search results */
+    .db-result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.1s;
+      border: 1px solid transparent;
+    }
+    .db-result-item:hover { background: var(--bg3); border-color: var(--border); }
+    .db-result-item .item-name { font-size: 13px; font-weight: 600; }
+    .db-result-item .item-specs { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .db-result-item .item-select { font-size: 11px; color: var(--accent2); font-weight: 700; opacity: 0; transition: opacity 0.1s; }
+    .db-result-item:hover .item-select { opacity: 1; }
+
+    #db-search-results {
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg2);
+    }
+    #db-search-results:empty { display: none; }
+
+    .db-no-results { padding: 16px; text-align: center; color: var(--text2); font-size: 13px; }
+
+    /* Deal category buttons */
+    .deal-cat-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text2);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .deal-cat-btn:hover { border-color: var(--accent); color: var(--text); }
+    .deal-cat-btn.active { background: rgba(108,99,255,0.2); color: var(--accent2); border-color: var(--accent); }
+
+    /* Deal part list items */
+    .deal-part-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--bg3);
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .deal-part-item .dpi-name { flex: 1; font-weight: 600; }
+    .deal-part-item .dpi-cat { font-size: 10px; color: var(--text2); }
+    .deal-part-item .dpi-remove { cursor: pointer; color: var(--red); opacity: 0.7; padding: 2px 6px; border-radius: 4px; }
+    .deal-part-item .dpi-remove:hover { opacity: 1; background: rgba(224,92,92,0.15); }
+
+    /* Deal result cards */
+    .deal-result-block {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--card-radius);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .drb-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .drb-header:hover { background: rgba(108,99,255,0.05); }
+    .drb-title { font-size: 14px; font-weight: 700; }
+    .drb-summary { display: flex; gap: 16px; align-items: center; }
+    .drb-price-range { font-size: 13px; }
+    .drb-avg { font-size: 17px; font-weight: 700; color: var(--accent2); }
+    .drb-chevron { font-size: 12px; color: var(--text2); transition: transform 0.2s; }
+    .drb-chevron.open { transform: rotate(180deg); }
+    .drb-body { padding: 14px 18px; display: none; }
+    .drb-body.open { display: block; }
+
+    .drb-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .drb-stat {
+      background: var(--bg3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .drb-stat-label { font-size: 10px; color: var(--text2); margin-bottom: 4px; }
+    .drb-stat-value { font-size: 16px; font-weight: 700; }
+    .drb-stat-value.min { color: var(--green); }
+    .drb-stat-value.avg { color: var(--accent2); }
+    .drb-stat-value.max { color: var(--orange); }
+
+    .drb-listing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 8px;
+    }
+    .drb-listing {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .drb-listing-source { font-size: 10px; font-weight: 700; color: var(--text2); margin-bottom: 4px; text-transform: uppercase; }
+    .drb-listing-title { font-size: 11px; color: var(--text); margin-bottom: 6px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .drb-listing-price { font-size: 15px; font-weight: 700; color: var(--accent2); }
+    .drb-listing-link { display: block; font-size: 11px; color: var(--blue); text-decoration: none; margin-top: 4px; }
+    .drb-listing-link:hover { text-decoration: underline; }
+    .drb-listing.cheapest { border-color: var(--green); }
+    .drb-listing.cheapest .drb-listing-source::after { content: ' 🏷️최저가'; color: var(--green); }
+
+    .drb-no-result { padding: 20px; text-align: center; color: var(--text2); font-size: 13px; }
+
+    /* Deal summary bar */
+    .deal-total-bar {
+      background: linear-gradient(135deg, rgba(108,99,255,0.15), rgba(76,175,135,0.1));
+      border: 1px solid rgba(108,99,255,0.3);
+      border-radius: var(--card-radius);
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .deal-total-bar .dtb-label { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+    .deal-total-bar .dtb-amount { font-size: 28px; font-weight: 700; color: var(--accent2); }
+    .deal-total-bar .dtb-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+    .deal-total-bar .dtb-right { text-align: right; }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-3 { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 600px) {
+      .sidebar { width: 60px; }
+      .sidebar .nav-text, .logo span, .logo h1 { display: none; }
+      .main { margin-left: 60px; padding: 16px; }
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="logo">
+    <h1>⚙️ PC Builder</h1>
+    <span>Manager v1.0</span>
+  </div>
+  <div class="nav-item active" onclick="showPage('inventory')">
+    <span class="nav-icon">🗄️</span>
+    <span class="nav-text">내 부품</span>
+  </div>
+  <div class="nav-item" onclick="showPage('compatibility')">
+    <span class="nav-icon">🔗</span>
+    <span class="nav-text">호환성 검사</span>
+  </div>
+  <div class="nav-item" onclick="showPage('bottleneck')">
+    <span class="nav-icon">🚧</span>
+    <span class="nav-text">병목 분석</span>
+  </div>
+  <div class="nav-item" onclick="showPage('prices')">
+    <span class="nav-icon">💰</span>
+    <span class="nav-text">시세 조회</span>
+  </div>
+  <div class="nav-item" onclick="showPage('recommend')">
+    <span class="nav-icon">🎯</span>
+    <span class="nav-text">빌드 추천</span>
+  </div>
+  <div class="nav-item" onclick="showPage('deals')">
+    <span class="nav-icon">🔍</span>
+    <span class="nav-text">매물 찾기</span>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<main class="main">
+
+  <!-- ── 인벤토리 ── -->
+  <div id="page-inventory" class="page active">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <h2>내 부품 인벤토리</h2>
+        <p>보유 중인 PC 부품을 관리하세요</p>
+      </div>
+      <button class="btn btn-primary" onclick="openAddModal()">＋ 부품 추가</button>
+    </div>
+
+    <div id="stats-grid" class="grid-4">
+      <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-value" id="stat-total">-</div><div class="stat-label">전체 부품</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" id="stat-owned">-</div><div class="stat-label">보유 중</div></div>
+      <div class="stat-card"><div class="stat-icon">⭐</div><div class="stat-value" id="stat-wishlist">-</div><div class="stat-label">위시리스트</div></div>
+      <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" id="stat-value">-</div><div class="stat-label">PC 추정 가치</div></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div class="card-title" style="margin:0">부품 목록</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="filterParts('all')">전체</button>
+          <button class="btn btn-ghost btn-sm" onclick="filterParts('owned')">보유</button>
+          <button class="btn btn-ghost btn-sm" onclick="filterParts('wishlist')">위시리스트</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>카테고리</th>
+              <th>브랜드</th>
+              <th>모델명</th>
+              <th>상태</th>
+              <th>구매가</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="parts-table-body">
+            <tr><td colspan="6"><div class="loading"><div class="spinner"></div>불러오는 중...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 호환성 ── -->
+  <div id="page-compatibility" class="page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <h2>호환성 검사</h2>
+        <p>CPU 소켓, RAM 규격, 파워 와트수 등을 자동으로 검사합니다</p>
+      </div>
+      <button class="btn btn-primary" onclick="loadCompatibility()">🔄 다시 검사</button>
+    </div>
+    <div id="compatibility-result">
+      <div class="loading"><div class="spinner"></div>검사 중...</div>
+    </div>
+  </div>
+
+  <!-- ── 병목 분석 ── -->
+  <div id="page-bottleneck" class="page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <h2>병목 분석</h2>
+        <p>CPU-GPU 균형, RAM 성능 등 병목을 탐지합니다</p>
+      </div>
+      <button class="btn btn-primary" onclick="loadBottleneck()">🔄 다시 분석</button>
+    </div>
+    <div id="bottleneck-result">
+      <div class="loading"><div class="spinner"></div>분석 중...</div>
+    </div>
+  </div>
+
+  <!-- ── 시세 조회 ── -->
+  <div id="page-prices" class="page">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <h2>중고 시세 조회</h2>
+        <p>다나와·번개장터·중고나라에서 실시간 시세를 가져옵니다</p>
+      </div>
+      <button class="btn btn-primary" onclick="loadTotalValue()">💰 내 PC 총 가치 계산</button>
+    </div>
+
+    <div id="total-value-section" style="display:none">
+      <div class="value-summary">
+        <div class="label">내 PC 중고 추정 가치</div>
+        <div class="amount" id="total-avg">계산 중...</div>
+        <div class="range" id="total-range"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">부품별 시세 조회</div>
+      <div id="price-parts-list">
+        <div class="loading"><div class="spinner"></div>불러오는 중...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 빌드 추천 ── -->
+  <div id="page-recommend" class="page">
+    <div class="page-header">
+      <h2>균형 빌드 추천</h2>
+      <p>보유 부품 기반으로 최적 조합과 업그레이드 경로를 추천합니다</p>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:20px">
+      <button class="btn btn-primary" onclick="loadRecommend('gaming')">🎮 게임용</button>
+      <button class="btn btn-ghost" onclick="loadRecommend('work')">💼 작업용</button>
+      <button class="btn btn-ghost" onclick="loadRecommend('streaming')">📺 스트리밍용</button>
+    </div>
+    <div id="recommend-result">
+      <div class="loading"><div class="spinner"></div>분석 중...</div>
+    </div>
+  </div>
+
+  <!-- ── 매물 찾기 ── -->
+  <div id="page-deals" class="page">
+    <div class="page-header">
+      <h2>가성비 매물 찾기</h2>
+      <p>찾고 싶은 부품을 추가하면 적정 중고가와 실제 매물을 자동으로 찾아드립니다</p>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px;align-items:start">
+
+      <!-- 왼쪽: 부품 추가 패널 -->
+      <div class="card">
+        <div class="card-title">부품 추가</div>
+
+        <!-- 카테고리 선택 -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="deal-cat-btn active" data-cat="" onclick="selectDealCat(this,'')">전체</button>
+          <button class="deal-cat-btn" data-cat="cpu" onclick="selectDealCat(this,'cpu')">CPU</button>
+          <button class="deal-cat-btn" data-cat="gpu" onclick="selectDealCat(this,'gpu')">GPU</button>
+          <button class="deal-cat-btn" data-cat="ram" onclick="selectDealCat(this,'ram')">RAM</button>
+          <button class="deal-cat-btn" data-cat="motherboard" onclick="selectDealCat(this,'motherboard')">메인보드</button>
+          <button class="deal-cat-btn" data-cat="ssd" onclick="selectDealCat(this,'ssd')">SSD</button>
+          <button class="deal-cat-btn" data-cat="psu" onclick="selectDealCat(this,'psu')">파워</button>
+          <button class="deal-cat-btn" data-cat="cooler" onclick="selectDealCat(this,'cooler')">쿨러</button>
+        </div>
+
+        <!-- 검색 입력 -->
+        <div style="position:relative;margin-bottom:8px">
+          <input id="deal-part-input" type="text" autocomplete="off"
+            placeholder="모델명 검색 또는 직접 입력..."
+            oninput="onDealSearch(this.value)"
+            onkeydown="if(event.key==='Enter'){addDealPartManual();}"
+            style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box" />
+          <span id="deal-search-spin" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%)">⏳</span>
+        </div>
+
+        <!-- DB 자동완성 드롭다운 -->
+        <div id="deal-autocomplete" style="display:none;border:1px solid var(--border);border-radius:8px;background:var(--bg2);max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
+
+        <!-- 직접 입력 버튼 -->
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:4px" onclick="addDealPartManual()">
+          ＋ 직접 입력으로 추가
+        </button>
+        <p style="font-size:11px;color:var(--text2);text-align:center">DB에 없는 모델은 직접 입력 후 추가</p>
+      </div>
+
+      <!-- 오른쪽: 추가된 부품 목록 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-title" style="margin:0">조회할 부품 목록</div>
+          <button class="btn btn-ghost btn-sm" onclick="clearDealList()">전체 삭제</button>
+        </div>
+        <div id="deal-part-list">
+          <div class="empty" style="padding:24px 0">
+            <div class="empty-icon" style="font-size:28px">📋</div>
+            <div class="empty-text" style="font-size:12px">왼쪽에서 부품을 추가하세요</div>
+          </div>
+        </div>
+        <button id="deal-search-btn" class="btn btn-primary" style="width:100%;margin-top:12px;display:none" onclick="runDealSearch()">
+          🔍 적정 중고가 일괄 조회
+        </button>
+      </div>
+
+    </div>
+
+    <!-- 결과 -->
+    <div id="deals-result"></div>
+  </div>
+
+</main>
+
+<!-- Add Part Modal -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal" style="width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h3 style="margin:0">➕ 부품 추가</h3>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- Step 1: 카테고리 + 검색 -->
+    <div id="modal-step1">
+      <div class="form-group">
+        <label>카테고리 선택</label>
+        <div id="category-btn-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px">
+          <button type="button" class="cat-btn" data-cat="cpu" onclick="selectCategory('cpu')">🖥️ CPU</button>
+          <button type="button" class="cat-btn" data-cat="gpu" onclick="selectCategory('gpu')">🎮 GPU</button>
+          <button type="button" class="cat-btn" data-cat="ram" onclick="selectCategory('ram')">💾 RAM</button>
+          <button type="button" class="cat-btn" data-cat="motherboard" onclick="selectCategory('motherboard')">🔌 메인보드</button>
+          <button type="button" class="cat-btn" data-cat="ssd" onclick="selectCategory('ssd')">⚡ SSD</button>
+          <button type="button" class="cat-btn" data-cat="hdd" onclick="selectCategory('hdd')">💿 HDD</button>
+          <button type="button" class="cat-btn" data-cat="psu" onclick="selectCategory('psu')">🔋 파워</button>
+          <button type="button" class="cat-btn" data-cat="case" onclick="selectCategory('case')">🗃️ 케이스</button>
+          <button type="button" class="cat-btn" data-cat="cooler" onclick="selectCategory('cooler')">❄️ 쿨러</button>
+        </div>
+      </div>
+
+      <!-- 검색 -->
+      <div id="db-search-section" style="display:none;margin-top:16px">
+        <div class="form-group" style="margin-bottom:8px">
+          <label id="db-search-label">모델 검색</label>
+          <div style="position:relative">
+            <input id="db-search-input" type="text" placeholder="모델명 또는 브랜드 입력..." autocomplete="off"
+              oninput="onDbSearch(this.value)" style="width:100%;padding-right:36px" />
+            <span id="db-search-spinner" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:14px">⏳</span>
+          </div>
+        </div>
+        <div id="db-search-results"></div>
+      </div>
+    </div>
+
+    <!-- Step 2: 폼 (선택 후 표시) -->
+    <div id="modal-step2" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 14px;background:var(--bg3);border-radius:8px">
+        <div id="selected-part-info" style="flex:1;font-size:13px"></div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="backToSearch()">← 다시 선택</button>
+      </div>
+
+      <form id="add-part-form" onsubmit="submitPart(event)">
+        <input type="hidden" id="f-category" />
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>브랜드</label>
+            <input id="f-brand" type="text" required placeholder="브랜드" />
+          </div>
+          <div class="form-group">
+            <label>모델명</label>
+            <input id="f-model" type="text" required placeholder="모델명" />
+          </div>
+        </div>
+
+        <!-- 스펙 요약 -->
+        <div id="spec-summary" style="display:none;margin-bottom:14px;padding:12px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.8"></div>
+
+        <div id="spec-fields"></div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>상태</label>
+            <select id="f-condition">
+              <option value="used">중고</option>
+              <option value="new">새것</option>
+              <option value="broken">불량</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>구분</label>
+            <select id="f-owned">
+              <option value="true">보유 중</option>
+              <option value="false">위시리스트</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>구매가 (원)</label>
+          <input id="f-purchase-price" type="number" placeholder="0 (선택)" />
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">취소</button>
+          <button type="submit" class="btn btn-primary">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+const API = "http://localhost:8000";
+
+// ── 상태 ──
+let allParts = [];
+let currentFilter = 'all';
+
+// ── 유틸 ──
+function fmt(n) {
+  if (!n || n === 0) return '-';
+  return n.toLocaleString('ko-KR') + '원';
+}
+
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+  document.querySelector(`[onclick="showPage('${name}')"]`).classList.add('active');
+
+  if (name === 'compatibility') loadCompatibility();
+  if (name === 'bottleneck') loadBottleneck();
+  if (name === 'prices') loadPricesList();
+  if (name === 'recommend') loadRecommend('gaming');
+}
+
+// ── 인벤토리 ──
+async function loadParts() {
+  try {
+    const [parts, stats] = await Promise.all([
+      fetch(`${API}/parts`).then(r => r.json()),
+      fetch(`${API}/stats`).then(r => r.json()),
+    ]);
+    allParts = parts;
+    renderStats(stats);
+    renderParts(parts);
+  } catch (e) {
+    document.getElementById('parts-table-body').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;color:var(--red);padding:20px">⚠️ 서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인하세요.</td></tr>`;
+  }
+}
+
+function renderStats(s) {
+  document.getElementById('stat-total').textContent = s.total;
+  document.getElementById('stat-owned').textContent = s.owned;
+  document.getElementById('stat-wishlist').textContent = s.wishlist;
+}
+
+function filterParts(f) {
+  currentFilter = f;
+  let filtered = allParts;
+  if (f === 'owned') filtered = allParts.filter(p => p.owned);
+  if (f === 'wishlist') filtered = allParts.filter(p => !p.owned);
+  renderParts(filtered);
+}
+
+function renderParts(parts) {
+  const tbody = document.getElementById('parts-table-body');
+  if (!parts.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">부품이 없습니다. 부품을 추가해보세요!</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = parts.map(p => `
+    <tr>
+      <td><span class="badge badge-${p.category}">${catLabel(p.category)}</span></td>
+      <td>${p.brand}</td>
+      <td style="font-weight:600">${p.model}</td>
+      <td><span style="font-size:12px;color:${condColor(p.condition)}">${condLabel(p.condition)}</span></td>
+      <td style="color:var(--text2)">${fmt(p.purchase_price)}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="fetchPartPrice(${p.id}, '${p.brand} ${p.model}')">💰</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePart(${p.id})">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function catLabel(c) {
+  const map = {cpu:'CPU',gpu:'GPU',ram:'RAM',ssd:'SSD',hdd:'HDD',motherboard:'메인보드',psu:'파워',case:'케이스',cooler:'쿨러'};
+  return map[c] || c;
+}
+
+function condColor(c) {
+  if (c === 'new') return 'var(--green)';
+  if (c === 'broken') return 'var(--red)';
+  return 'var(--text2)';
+}
+
+function condLabel(c) {
+  if (c === 'new') return '새것';
+  if (c === 'broken') return '불량';
+  return '중고';
+}
+
+async function deletePart(id) {
+  if (!confirm('이 부품을 삭제할까요?')) return;
+  await fetch(`${API}/parts/${id}`, { method: 'DELETE' });
+  showToast('삭제되었습니다.', 'success');
+  loadParts();
+}
+
+// ── 부품 추가 (DB 검색 기반) ──
+let selectedSpecs = {};
+let dbSearchTimer = null;
+
+function openAddModal() {
+  document.getElementById('modal-overlay').classList.add('open');
+  document.getElementById('modal-step1').style.display = '';
+  document.getElementById('modal-step2').style.display = 'none';
+  document.getElementById('db-search-section').style.display = 'none';
+  document.getElementById('db-search-results').innerHTML = '';
+  document.getElementById('db-search-input') && (document.getElementById('db-search-input').value = '');
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
+  selectedSpecs = {};
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function selectCategory(cat) {
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
+  document.querySelector(`.cat-btn[data-cat="${cat}"]`).classList.add('selected');
+
+  const section = document.getElementById('db-search-section');
+  const label = document.getElementById('db-search-label');
+  const catLabels = {cpu:'CPU',gpu:'GPU',ram:'RAM',ssd:'SSD',hdd:'HDD',motherboard:'메인보드',psu:'파워서플라이',case:'케이스',cooler:'쿨러'};
+  label.textContent = `${catLabels[cat]} 모델 검색`;
+  section.style.display = '';
+  document.getElementById('db-search-results').innerHTML = '';
+  const inp = document.getElementById('db-search-input');
+  inp.value = '';
+  inp.dataset.cat = cat;
+  inp.focus();
+
+  // 처음 진입 시 전체 목록 표시
+  loadDbResults('', cat);
+}
+
+async function onDbSearch(q) {
+  clearTimeout(dbSearchTimer);
+  dbSearchTimer = setTimeout(() => {
+    const cat = document.getElementById('db-search-input').dataset.cat || '';
+    loadDbResults(q, cat);
+  }, 180);
+}
+
+async function loadDbResults(q, cat) {
+  const el = document.getElementById('db-search-results');
+  const spinner = document.getElementById('db-search-spinner');
+  spinner.style.display = '';
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (cat) params.set('category', cat);
+    const data = await fetch(`${API}/db/search?${params}`).then(r => r.json());
+    spinner.style.display = 'none';
+
+    if (!data.length) {
+      el.innerHTML = '<div class="db-no-results">검색 결과가 없습니다</div>';
+      return;
+    }
+
+    el.innerHTML = data.map((p, i) => {
+      const specText = buildSpecSummaryText(p.specs, p.category);
+      return `
+        <div class="db-result-item" onclick="selectDbPart(${i})">
+          <div>
+            <div class="item-name">${p.brand} ${p.model}</div>
+            <div class="item-specs">${specText}</div>
+          </div>
+          <span class="item-select">선택 →</span>
+        </div>`;
+    }).join('');
+
+    // 인덱스 → 데이터 매핑 저장
+    el._data = data;
+  } catch {
+    spinner.style.display = 'none';
+    el.innerHTML = '<div class="db-no-results" style="color:var(--red)">서버 연결 오류</div>';
+  }
+}
+
+function buildSpecSummaryText(specs, cat) {
+  if (!specs) return '';
+  const parts = [];
+  if (cat === 'cpu') {
+    if (specs.socket) parts.push(specs.socket);
+    if (specs.cores) parts.push(`${specs.cores}코어`);
+    if (specs.boost_clock_ghz) parts.push(`최대 ${specs.boost_clock_ghz}GHz`);
+    if (specs.tdp_w) parts.push(`TDP ${specs.tdp_w}W`);
+  } else if (cat === 'gpu') {
+    if (specs.vram_gb) parts.push(`VRAM ${specs.vram_gb}GB`);
+    if (specs.vram_type) parts.push(specs.vram_type);
+    if (specs.tdp_w) parts.push(`TDP ${specs.tdp_w}W`);
+    if (specs.architecture) parts.push(specs.architecture);
+  } else if (cat === 'ram') {
+    if (specs.capacity_gb) parts.push(`${specs.capacity_gb}GB`);
+    if (specs.ddr_type) parts.push(specs.ddr_type);
+    if (specs.speed_mhz) parts.push(`${specs.speed_mhz}MHz`);
+    if (specs.latency) parts.push(specs.latency);
+  } else if (cat === 'ssd') {
+    if (specs.capacity_gb) parts.push(`${specs.capacity_gb >= 1000 ? (specs.capacity_gb/1000)+'TB' : specs.capacity_gb+'GB'}`);
+    if (specs.interface) parts.push(specs.interface);
+    if (specs.read_mbps) parts.push(`읽기 ${specs.read_mbps}MB/s`);
+  } else if (cat === 'hdd') {
+    if (specs.capacity_gb) parts.push(`${specs.capacity_gb >= 1000 ? (specs.capacity_gb/1000)+'TB' : specs.capacity_gb+'GB'}`);
+    if (specs.rpm) parts.push(`${specs.rpm}RPM`);
+  } else if (cat === 'motherboard') {
+    if (specs.socket) parts.push(specs.socket);
+    if (specs.chipset) parts.push(specs.chipset);
+    if (specs.ddr_type) parts.push(specs.ddr_type);
+    if (specs.form_factor) parts.push(specs.form_factor);
+  } else if (cat === 'psu') {
+    if (specs.wattage) parts.push(`${specs.wattage}W`);
+    if (specs.rating) parts.push(`80+ ${specs.rating}`);
+    if (specs.modular) parts.push(`${specs.modular} Modular`);
+  } else if (cat === 'case') {
+    if (specs.form_factor) parts.push(specs.form_factor);
+    if (specs.size) parts.push(specs.size);
+    if (specs.max_gpu_mm) parts.push(`GPU 최대 ${specs.max_gpu_mm}mm`);
+  } else if (cat === 'cooler') {
+    if (specs.type) parts.push(specs.type);
+    if (specs.radiator_mm) parts.push(`${specs.radiator_mm}mm`);
+    if (specs.height_mm) parts.push(`높이 ${specs.height_mm}mm`);
+    if (specs.tdp_w) parts.push(`TDP ${specs.tdp_w}W`);
+  }
+  return parts.join(' · ');
+}
+
+function selectDbPart(idx) {
+  const resultsEl = document.getElementById('db-search-results');
+  const part = resultsEl._data[idx];
+  if (!part) return;
+
+  selectedSpecs = part.specs || {};
+
+  document.getElementById('f-category').value = part.category;
+  document.getElementById('f-brand').value = part.brand;
+  document.getElementById('f-model').value = part.model;
+
+  // 스펙 요약 표시
+  const summaryEl = document.getElementById('spec-summary');
+  const specText = buildSpecSummaryText(part.specs, part.category);
+  if (specText) {
+    summaryEl.style.display = '';
+    summaryEl.innerHTML = '📋 ' + specText.split(' · ').join('<br>📋 ');
+  } else {
+    summaryEl.style.display = 'none';
+  }
+
+  document.getElementById('selected-part-info').innerHTML =
+    `<span class="badge badge-${part.category}">${catLabel(part.category)}</span>
+     <strong style="margin-left:8px">${part.brand} ${part.model}</strong>`;
+
+  document.getElementById('spec-fields').innerHTML = '';
+  document.getElementById('modal-step1').style.display = 'none';
+  document.getElementById('modal-step2').style.display = '';
+  document.getElementById('add-part-form').reset();
+  // reset 이후 다시 채우기
+  document.getElementById('f-category').value = part.category;
+  document.getElementById('f-brand').value = part.brand;
+  document.getElementById('f-model').value = part.model;
+}
+
+function backToSearch() {
+  document.getElementById('modal-step1').style.display = '';
+  document.getElementById('modal-step2').style.display = 'none';
+}
+
+async function submitPart(e) {
+  e.preventDefault();
+  const cat = document.getElementById('f-category').value;
+
+  const body = {
+    category: cat,
+    brand: document.getElementById('f-brand').value,
+    model: document.getElementById('f-model').value,
+    condition: document.getElementById('f-condition').value,
+    owned: document.getElementById('f-owned').value === 'true',
+    purchase_price: parseFloat(document.getElementById('f-purchase-price').value) || null,
+    specs: selectedSpecs,
+  };
+
+  const res = await fetch(`${API}/parts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (res.ok) {
+    showToast('부품이 추가되었습니다! ✅');
+    closeModal();
+    loadParts();
+  } else {
+    showToast('오류가 발생했습니다.', 'error');
+  }
+}
+
+// ── 호환성 ──
+async function loadCompatibility() {
+  const el = document.getElementById('compatibility-result');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div>검사 중...</div>';
+  try {
+    const data = await fetch(`${API}/analysis/compatibility`).then(r => r.json());
+    renderCompatibility(data);
+  } catch {
+    el.innerHTML = '<div class="alert alert-error"><span class="alert-icon">⚠️</span><div class="alert-body">서버에 연결할 수 없습니다.</div></div>';
+  }
+}
+
+function renderCompatibility(data) {
+  const el = document.getElementById('compatibility-result');
+  const all = [...data.issues, ...data.warnings];
+
+  if (!all.length) {
+    el.innerHTML = `
+      <div class="alert alert-ok">
+        <span class="alert-icon">✅</span>
+        <div class="alert-body"><strong>모든 부품이 호환됩니다!</strong>소켓, RAM 규격, 파워 와트수 모두 이상 없습니다.</div>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = all.map(item => {
+    let cls = item.severity === 'error' ? 'error' : item.severity === 'warning' ? 'warning' : 'ok';
+    let icon = item.severity === 'error' ? '❌' : item.severity === 'warning' ? '⚠️' : 'ℹ️';
+    return `
+      <div class="alert alert-${cls}">
+        <span class="alert-icon">${icon}</span>
+        <div class="alert-body">
+          <strong>${item.message}</strong>
+          ${item.recommended_watt ? `<small>권장 와트수: ${item.recommended_watt}W</small>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 병목 분석 ──
+async function loadBottleneck() {
+  const el = document.getElementById('bottleneck-result');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div>분석 중...</div>';
+  try {
+    const data = await fetch(`${API}/analysis/bottleneck`).then(r => r.json());
+    renderBottleneck(data);
+  } catch {
+    el.innerHTML = '<div class="alert alert-error">서버에 연결할 수 없습니다.</div>';
+  }
+}
+
+function renderBottleneck(data) {
+  const el = document.getElementById('bottleneck-result');
+  if (!data.bottlenecks.length) {
+    el.innerHTML = '<div class="alert alert-info">분석할 부품이 부족합니다. CPU와 GPU를 먼저 추가하세요.</div>';
+    return;
+  }
+
+  el.innerHTML = data.bottlenecks.map(b => {
+    const sevMap = { ok: 'ok', medium: 'warning', high: 'error', low: 'info' };
+    const iconMap = { ok: '✅', medium: '⚠️', high: '🚧', low: 'ℹ️' };
+    const cls = sevMap[b.severity] || 'info';
+    const icon = iconMap[b.severity] || 'ℹ️';
+
+    return `
+      <div class="alert alert-${cls}" style="margin-bottom:10px">
+        <span class="alert-icon">${icon}</span>
+        <div class="alert-body">
+          <strong>${b.message}</strong>
+          ${b.detail ? `<small style="display:block;margin-top:3px">${b.detail}</small>` : ''}
+          ${b.recommendation ? `<small style="display:block;margin-top:6px;color:var(--blue)">💡 ${b.recommendation}</small>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── 시세 조회 ──
+async function loadPricesList() {
+  const el = document.getElementById('price-parts-list');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div>불러오는 중...</div>';
+  try {
+    const parts = await fetch(`${API}/parts?owned=true`).then(r => r.json());
+    if (!parts.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">보유 부품이 없습니다.</div></div>';
+      return;
+    }
+    el.innerHTML = parts.map(p => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <span class="badge badge-${p.category}">${catLabel(p.category)}</span>
+          <span style="margin-left:10px;font-weight:600">${p.brand} ${p.model}</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="fetchPartPrice(${p.id}, '${p.brand} ${p.model}')">시세 조회</button>
+      </div>
+      <div id="price-result-${p.id}"></div>
+    `).join('');
+  } catch {
+    el.innerHTML = '<div class="alert alert-error">서버에 연결할 수 없습니다.</div>';
+  }
+}
+
+async function fetchPartPrice(partId, name) {
+  const el = document.getElementById(`price-result-${partId}`);
+  if (!el) { showToast(`${name} 시세 조회 중...`); return; }
+  el.innerHTML = '<div class="loading"><div class="spinner"></div>시세 조회 중...</div>';
+  try {
+    const data = await fetch(`${API}/prices/${partId}`).then(r => r.json());
+    if (!data.prices.length) {
+      el.innerHTML = '<p style="color:var(--text2);font-size:12px;padding:8px 0">매물을 찾지 못했습니다.</p>';
+      return;
+    }
+    el.innerHTML = `<div class="price-grid">${data.prices.map(p => `
+      <div class="price-card source-${p.source}">
+        <div class="price-card-source">${sourceLabel(p.source)}</div>
+        <div class="price-card-title">${p.title}</div>
+        <div class="price-card-price">${fmt(p.price)}</div>
+        ${p.url ? `<a class="price-card-link" href="${p.url}" target="_blank">→ 매물 보기</a>` : ''}
+      </div>`).join('')}</div>`;
+  } catch {
+    el.innerHTML = '<p style="color:var(--red);font-size:12px;padding:8px 0">조회 중 오류가 발생했습니다.</p>';
+  }
+}
+
+function sourceLabel(s) {
+  return { danawa: '다나와', bunjang: '번개장터', joongna: '중고나라' }[s] || s;
+}
+
+async function loadTotalValue() {
+  const sec = document.getElementById('total-value-section');
+  const avgEl = document.getElementById('total-avg');
+  const rangeEl = document.getElementById('total-range');
+  sec.style.display = 'block';
+  avgEl.textContent = '계산 중...';
+  rangeEl.textContent = '';
+  try {
+    const data = await fetch(`${API}/prices/pc/total`).then(r => r.json());
+    avgEl.textContent = fmt(data.total_avg);
+    rangeEl.textContent = `최소 ${fmt(data.total_min)} ~ 최대 ${fmt(data.total_max)}`;
+  } catch {
+    avgEl.textContent = '오류';
+  }
+}
+
+// ── 빌드 추천 ──
+async function loadRecommend(purpose) {
+  const el = document.getElementById('recommend-result');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div>분석 중...</div>';
+  try {
+    const data = await fetch(`${API}/analysis/recommend?purpose=${purpose}`).then(r => r.json());
+    renderRecommend(data);
+  } catch {
+    el.innerHTML = '<div class="alert alert-error">서버에 연결할 수 없습니다.</div>';
+  }
+}
+
+function renderRecommend(data) {
+  const el = document.getElementById('recommend-result');
+  const score = data.estimated_score;
+  const maxScore = 200;
+  const pct = Math.min(100, Math.round(score / maxScore * 100));
+  const ringClass = pct >= 70 ? 'good' : pct >= 40 ? 'ok' : 'bad';
+
+  let html = `
+    <div class="score-display">
+      <div class="score-ring ${ringClass}">${pct}점</div>
+      <div>
+        <div style="font-weight:700;margin-bottom:4px">${data.build_summary}</div>
+        <div style="font-size:12px;color:var(--text2)">용도: ${purposeLabel(data.purpose)}</div>
+        <div class="bottleneck-bar" style="width:200px;margin-top:8px">
+          <div class="bottleneck-fill ${ringClass === 'good' ? 'fill-ok' : ringClass === 'ok' ? 'fill-warn' : 'fill-danger'}" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>`;
+
+  if (data.missing_parts.length) {
+    html += `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">누락된 부품</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${data.missing_parts.map(c => `<span class="badge badge-${c}">${catLabel(c)}</span>`).join('')}
+        </div>
+        <p style="font-size:12px;color:var(--text2);margin-top:10px">위 부품이 없으면 완성된 PC를 빌드할 수 없습니다.</p>
+      </div>`;
+  }
+
+  if (data.upgrade_suggestions.length) {
+    html += `
+      <div class="card">
+        <div class="card-title">업그레이드 추천</div>
+        ${data.upgrade_suggestions.map(s => `
+          <div class="alert alert-warning" style="margin-bottom:8px">
+            <span class="alert-icon">💡</span>
+            <div class="alert-body">
+              <strong>${catLabel(s.category)} 업그레이드 권장</strong>
+              <small>${s.reason}</small>
+              ${s.recommendation ? `<small style="display:block;color:var(--blue)">${s.recommendation}</small>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function purposeLabel(p) {
+  return { gaming: '🎮 게임', work: '💼 작업', streaming: '📺 스트리밍' }[p] || p;
+}
+
+// ── 매물 찾기 탭 ──
+let dealPartList = [];   // [{query, label, category}]
+let dealCurrentCat = '';
+let dealSearchTimer = null;
+
+function selectDealCat(btn, cat) {
+  document.querySelectorAll('.deal-cat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  dealCurrentCat = cat;
+  const inp = document.getElementById('deal-part-input');
+  if (inp.value.trim()) onDealSearch(inp.value);
+  else document.getElementById('deal-autocomplete').style.display = 'none';
+}
+
+function onDealSearch(q) {
+  clearTimeout(dealSearchTimer);
+  if (!q.trim()) { document.getElementById('deal-autocomplete').style.display = 'none'; return; }
+  dealSearchTimer = setTimeout(() => loadDealAutocomplete(q), 200);
+}
+
+async function loadDealAutocomplete(q) {
+  const ac = document.getElementById('deal-autocomplete');
+  const spin = document.getElementById('deal-search-spin');
+  spin.style.display = '';
+  try {
+    const params = new URLSearchParams({ q });
+    if (dealCurrentCat) params.set('category', dealCurrentCat);
+    const data = await fetch(`${API}/db/search?${params}`).then(r => r.json());
+    spin.style.display = 'none';
+    if (!data.length) { ac.style.display = 'none'; return; }
+    ac.style.display = '';
+    ac.innerHTML = data.slice(0, 12).map((p, i) => {
+      const spec = buildSpecSummaryText(p.specs, p.category);
+      return `<div class="db-result-item" onclick="addDealPartFromDb(${i})" style="padding:8px 12px">
+        <div>
+          <div class="item-name">${p.brand} ${p.model}</div>
+          ${spec ? `<div class="item-specs">${spec}</div>` : ''}
+        </div>
+        <span class="item-select">추가 →</span>
+      </div>`;
+    }).join('');
+    ac._data = data;
+  } catch {
+    spin.style.display = 'none';
+    ac.style.display = 'none';
+  }
+}
+
+function addDealPartFromDb(idx) {
+  const ac = document.getElementById('deal-autocomplete');
+  const p = ac._data[idx];
+  if (!p) return;
+  addToDealList({
+    query: `${p.brand} ${p.model}`,
+    label: `${p.brand} ${p.model}`,
+    category: p.category,
+  });
+  document.getElementById('deal-part-input').value = '';
+  ac.style.display = 'none';
+}
+
+function addDealPartManual() {
+  const q = document.getElementById('deal-part-input').value.trim();
+  if (!q) return;
+  addToDealList({ query: q, label: q, category: dealCurrentCat });
+  document.getElementById('deal-part-input').value = '';
+  document.getElementById('deal-autocomplete').style.display = 'none';
+}
+
+function addToDealList(item) {
+  if (dealPartList.find(p => p.query === item.query)) {
+    showToast('이미 추가된 부품입니다.', 'error'); return;
+  }
+  dealPartList.push(item);
+  renderDealPartList();
+}
+
+function removeDealPart(idx) {
+  dealPartList.splice(idx, 1);
+  renderDealPartList();
+}
+
+function clearDealList() {
+  dealPartList = [];
+  renderDealPartList();
+  document.getElementById('deals-result').innerHTML = '';
+}
+
+function renderDealPartList() {
+  const el = document.getElementById('deal-part-list');
+  const btn = document.getElementById('deal-search-btn');
+  if (!dealPartList.length) {
+    el.innerHTML = `<div class="empty" style="padding:24px 0">
+      <div class="empty-icon" style="font-size:28px">📋</div>
+      <div class="empty-text" style="font-size:12px">왼쪽에서 부품을 추가하세요</div>
+    </div>`;
+    btn.style.display = 'none';
+    return;
+  }
+  el.innerHTML = dealPartList.map((p, i) => `
+    <div class="deal-part-item">
+      ${p.category ? `<span class="badge badge-${p.category}" style="font-size:10px">${catLabel(p.category)}</span>` : ''}
+      <span class="dpi-name">${p.label}</span>
+      <span class="dpi-remove" onclick="removeDealPart(${i})">✕</span>
+    </div>`).join('');
+  btn.style.display = '';
+}
+
+async function runDealSearch() {
+  if (!dealPartList.length) return;
+  const resultEl = document.getElementById('deals-result');
+  resultEl.innerHTML = `<div class="loading"><div class="spinner"></div>
+    ${dealPartList.length}개 부품 중고가 조회 중...</div>`;
+
+  // 병렬로 모든 부품 조회
+  const results = await Promise.all(
+    dealPartList.map(async (part) => {
+      try {
+        const data = await fetch(
+          `${API}/prices/search?query=${encodeURIComponent(part.query)}`
+        ).then(r => r.json());
+        return { part, listings: Array.isArray(data) ? data : [] };
+      } catch {
+        return { part, listings: [] };
+      }
+    })
+  );
+
+  renderDealResults(results);
+}
+
+function renderDealResults(results) {
+  const resultEl = document.getElementById('deals-result');
+
+  // 합계 계산 (부품별 평균가 합산)
+  let totalAvg = 0, foundCount = 0;
+  results.forEach(({ listings }) => {
+    const prices = listings.map(l => l.price).filter(p => p > 0);
+    if (prices.length) {
+      totalAvg += Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+      foundCount++;
+    }
+  });
+
+  let html = '';
+
+  // 합계 바
+  if (foundCount > 0) {
+    const notFound = results.length - foundCount;
+    html += `<div class="deal-total-bar">
+      <div>
+        <div class="dtb-label">전체 예상 비용 (부품별 평균가 합산)</div>
+        <div class="dtb-amount">${fmt(totalAvg)}</div>
+        <div class="dtb-sub">${foundCount}개 부품 조회 성공${notFound ? ` · ${notFound}개 매물 없음` : ''}</div>
+      </div>
+      <div class="dtb-right">
+        <div class="dtb-label">조회 부품 수</div>
+        <div style="font-size:28px;font-weight:700;color:var(--green)">${results.length}개</div>
+      </div>
+    </div>`;
+  }
+
+  // 부품별 결과
+  results.forEach(({ part, listings }, idx) => {
+    const prices = listings.map(l => l.price).filter(p => p > 0);
+    const minPrice = prices.length ? Math.min(...prices) : 0;
+    const maxPrice = prices.length ? Math.max(...prices) : 0;
+    const avgPrice = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+    const cheapestIdx = listings.findIndex(l => l.price === minPrice);
+
+    html += `<div class="deal-result-block">
+      <div class="drb-header" onclick="toggleDrb(${idx})">
+        <div>
+          ${part.category ? `<span class="badge badge-${part.category}" style="font-size:10px;margin-right:8px">${catLabel(part.category)}</span>` : ''}
+          <span class="drb-title">${part.label}</span>
+        </div>
+        <div class="drb-summary">
+          ${avgPrice ? `<span class="drb-avg">${fmt(avgPrice)}</span>
+          <span class="drb-price-range" style="color:var(--text2);font-size:11px">${fmt(minPrice)} ~ ${fmt(maxPrice)}</span>` :
+          `<span style="color:var(--text2);font-size:12px">매물 없음</span>`}
+          <span class="drb-chevron" id="chev-${idx}">▼</span>
+        </div>
+      </div>
+      <div class="drb-body" id="drb-body-${idx}">`;
+
+    if (!listings.length || !prices.length) {
+      html += `<div class="drb-no-result">🔎 매물을 찾지 못했습니다. 검색어를 바꿔 다시 시도해보세요.</div>`;
+    } else {
+      html += `<div class="drb-stats">
+        <div class="drb-stat"><div class="drb-stat-label">최저가</div><div class="drb-stat-value min">${fmt(minPrice)}</div></div>
+        <div class="drb-stat"><div class="drb-stat-label">평균가 (적정가)</div><div class="drb-stat-value avg">${fmt(avgPrice)}</div></div>
+        <div class="drb-stat"><div class="drb-stat-label">최고가</div><div class="drb-stat-value max">${fmt(maxPrice)}</div></div>
+      </div>
+      <div class="drb-listing-grid">
+        ${listings.map((l, li) => `
+          <div class="drb-listing ${li === cheapestIdx ? 'cheapest' : ''}">
+            <div class="drb-listing-source">${sourceLabel(l.source)}</div>
+            <div class="drb-listing-title">${l.title || part.label}</div>
+            <div class="drb-listing-price">${fmt(l.price)}</div>
+            ${l.url ? `<a class="drb-listing-link" href="${l.url}" target="_blank">→ 매물 보기</a>` : ''}
+          </div>`).join('')}
+      </div>`;
+    }
+    html += `</div></div>`;
+  });
+
+  resultEl.innerHTML = html;
+
+  // 첫 번째 항목 자동 펼치기
+  if (results.length > 0) toggleDrb(0);
+}
+
+function toggleDrb(idx) {
+  const body = document.getElementById(`drb-body-${idx}`);
+  const chev = document.getElementById(`chev-${idx}`);
+  if (!body) return;
+  const isOpen = body.classList.toggle('open');
+  chev.classList.toggle('open', isOpen);
+}
+
+// ── 초기화 ──
+loadParts();
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+</script>
+</body>
+</html>
