@@ -15,6 +15,9 @@ env/
 backend/*.db
 backend/*.sqlite
 
+# First-run install marker
+backend/.installed
+
 # IDE
 .vscode/
 .idea/
