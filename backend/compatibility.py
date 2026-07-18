@@ -362,28 +362,48 @@ _CPU_SCORE_MAX = 65000
 _GPU_SCORE_MAX = 22000
 
 
-def find_score(name: str, score_map: dict) -> float:
-    """이름으로 점수를 찾음 (가장 긴 키 우선으로 매칭)"""
-    name_lower = name.lower()
+import re
+
+
+# 한글 표기 → 영문 (매칭 전 치환)
+KOREAN_ALIASES = [
+    ("쓰레드리퍼", "threadripper"), ("스레드리퍼", "threadripper"),
+    ("라이젠", "ryzen"), ("인텔", "intel"), ("코어", "core"),
+    ("지포스", "geforce"), ("라데온", "radeon"),
+    ("펜티엄", "pentium"), ("셀러론", "celeron"), ("제온", "xeon"),
+]
+
+
+def _normalize(s: str) -> str:
+    """공백/기호 제거 소문자화 + 한글 별칭 치환 — '라이젠5 3600'과 'ryzen 5 3600' 매칭용"""
+    s = s.lower()
+    for ko, en in KOREAN_ALIASES:
+        s = s.replace(ko, en)
+    return re.sub(r"[^a-z0-9가-힣]", "", s)
+
+
+def _find_normalized(name: str, mapping: dict):
+    name_norm = _normalize(name)
     best_key = None
     best_len = 0
-    for key in score_map:
-        if key in name_lower and len(key) > best_len:
+    for key in mapping:
+        key_norm = _normalize(key)
+        if key_norm in name_norm and len(key_norm) > best_len:
             best_key = key
-            best_len = len(key)
-    return score_map[best_key] if best_key else 0
+            best_len = len(key_norm)
+    return best_key
+
+
+def find_score(name: str, score_map: dict) -> float:
+    """이름으로 점수를 찾음 (가장 긴 키 우선으로 매칭)"""
+    key = _find_normalized(name, score_map)
+    return score_map[key] if key else 0
 
 
 def find_socket(name: str, socket_map: dict) -> str | None:
     """이름으로 소켓/슬롯 정보를 찾음 (가장 긴 키 우선)"""
-    name_lower = name.lower()
-    best_key = None
-    best_len = 0
-    for key in socket_map:
-        if key in name_lower and len(key) > best_len:
-            best_key = key
-            best_len = len(key)
-    return socket_map[best_key] if best_key else None
+    key = _find_normalized(name, socket_map)
+    return socket_map[key] if key else None
 
 
 def check_compatibility(parts: list[dict]) -> dict:
