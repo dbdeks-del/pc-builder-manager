@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 
 from database import init_db, get_db
@@ -87,7 +87,7 @@ class LedgerCreate(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────
 
 def part_dict(p: Part) -> dict:
-    perf = part_performance(p.category, p.brand or "", p.model or "")
+    perf = part_performance(p.category, p.brand or "", p.model or "", p.specs or {})
     return {
         "id": p.id, "category": p.category, "brand": p.brand, "model": p.model,
         "specs": p.specs or {}, "condition": p.condition, "owned": p.owned,
@@ -155,6 +155,22 @@ def delete_part(part_id: int, db: Session = Depends(get_db)):
     db.delete(part)
     db.commit()
     return {"ok": True}
+
+
+@app.post("/parts/{part_id}/sell")
+def sell_part(part_id: int, data: SellRequest, db: Session = Depends(get_db)):
+    """부품 개별 판매: 장부에 기록하고 인벤토리에서 제거"""
+    part = db.query(Part).filter(Part.id == part_id).first()
+    if not part:
+        raise HTTPException(404, "Part not found")
+    if part.pc_id is not None:
+        raise HTTPException(400, "PC에 장착된 부품입니다. 먼저 탈착하세요.")
+    name = f"{part.brand or ''} {part.model or ''}".strip()
+    margin = data.price - (part.purchase_price or 0)
+    db.add(LedgerEntry(type="sell", item=f"[부품판매] {name}", price=data.price))
+    db.delete(part)
+    db.commit()
+    return {"ok": True, "margin": margin}
 
 
 # ── PC 조립 (조립실) ──────────────────────────────────────────
@@ -369,64 +385,90 @@ def recommend(purpose: str = "gaming", db: Session = Depends(get_db)):
 
 # ── Price ─────────────────────────────────────────────────────
 
+PRICE_TTL = timedelta(hours=24)  # 시세는 크게 안 변하니 하루 캐시
+
+
+def _cached_prices(db: Session, part_id: int):
+    """24시간 내 캐시가 있으면 반환, 없으면 None"""
+    rows = db.query(PriceCache).filter(PriceCache.part_id == part_id).all()
+    if not rows:
+        return None
+    newest = max((r.fetched_at for r in rows if r.fetched_at), default=None)
+    if not newest or datetime.utcnow() - newest > PRICE_TTL:
+        return None
+    return [{"source": r.source, "title": r.title, "price": r.price, "url": r.url,
+             "condition": "new" if r.source == "danawa" else "used"}
+            for r in rows if r.source != "none"]  # "none" = 매물 0건 마커
+
+
+def _store_prices(db: Session, part_id: int, prices: list[dict]):
+    db.query(PriceCache).filter(PriceCache.part_id == part_id).delete()
+    for p in prices:
+        db.add(PriceCache(part_id=part_id, source=p["source"], price=p["price"],
+                          url=p.get("url", ""), title=p.get("title", "")))
+    if not prices:  # 매물 0건도 캐시해서 매번 재크롤링하지 않게
+        db.add(PriceCache(part_id=part_id, source="none", price=0, url="", title=""))
+    db.commit()
+
+
+async def get_prices_cached(db: Session, part: Part, refresh: bool = False) -> tuple[list[dict], bool]:
+    """(가격목록, 캐시사용여부). refresh=True면 강제 재조회"""
+    if not refresh:
+        cached = _cached_prices(db, part.id)
+        if cached is not None:
+            return cached, True
+    prices = await get_part_prices(part.brand or "", part.model or "", part.category)
+    _store_prices(db, part.id, prices)
+    return prices, False
+
+
 @app.get("/prices/pc/total")
-async def get_total_pc_value(pc_id: Optional[int] = None, db: Session = Depends(get_db)):
+async def get_total_pc_value(pc_id: Optional[int] = None, refresh: bool = False, db: Session = Depends(get_db)):
     q = db.query(Part).filter(Part.owned == True)
     if pc_id is not None:
         q = db.query(Part).filter(Part.pc_id == pc_id)
     parts = q.all()
 
-    parts_with_prices = []
-    for part in parts:
-        prices = await get_part_prices(part.brand, part.model, part.category)
-        parts_with_prices.append({
+    # 부품별 시세를 병렬 조회 (캐시 히트는 즉시 반환됨)
+    results = await asyncio.gather(*[get_prices_cached(db, p, refresh) for p in parts])
+
+    parts_with_prices = [
+        {
             "part": {"id": part.id, "category": part.category, "brand": part.brand, "model": part.model},
             "prices": prices,
-        })
-
+            "cached": cached,
+        }
+        for part, (prices, cached) in zip(parts, results)
+    ]
     return calculate_pc_value(parts_with_prices)
 
 
 @app.get("/prices/search")
 async def search_deals(query: str, db: Session = Depends(get_db)):
-    """가성비 매물 검색"""
+    """가성비 매물 검색 (완본체 매물도 포함, 0원 매물만 제외)"""
     from crawler import search_bunjang, search_junggo, search_danawa_direct
     tasks = [
         search_danawa_direct(query),
-        search_bunjang(query + " 중고"),
-        search_junggo(query + " 중고"),
+        search_bunjang(query),
+        search_junggo(query),
     ]
     results_list = await asyncio.gather(*tasks, return_exceptions=True)
     all_results = []
     for r in results_list:
         if isinstance(r, list):
             all_results.extend(r)
-    all_results.sort(key=lambda x: x.get("price", 0))
+    all_results = [r for r in all_results if r.get("price", 0) > 0]
+    all_results.sort(key=lambda x: (x.get("condition") != "used", x.get("price", 0)))
     return all_results
 
 
 @app.get("/prices/{part_id}")
-async def get_price(part_id: int, db: Session = Depends(get_db)):
+async def get_price(part_id: int, refresh: bool = False, db: Session = Depends(get_db)):
     part = db.query(Part).filter(Part.id == part_id).first()
     if not part:
         raise HTTPException(404, "Part not found")
-
-    prices = await get_part_prices(part.brand, part.model, part.category)
-
-    # 캐시 저장
-    db.query(PriceCache).filter(PriceCache.part_id == part_id).delete()
-    for p in prices:
-        cache = PriceCache(
-            part_id=part_id,
-            source=p["source"],
-            price=p["price"],
-            url=p.get("url", ""),
-            title=p.get("title", ""),
-        )
-        db.add(cache)
-    db.commit()
-
-    return {"part_id": part_id, "prices": prices}
+    prices, cached = await get_prices_cached(db, part, refresh)
+    return {"part_id": part_id, "prices": prices, "cached": cached}
 
 
 # ── Parts DB Search ───────────────────────────────────────────
@@ -434,6 +476,33 @@ async def get_price(part_id: int, db: Session = Depends(get_db)):
 @app.get("/db/search")
 def db_search(q: str = "", category: str = ""):
     return search_parts(q, category)
+
+
+# ── Backup ────────────────────────────────────────────────────
+
+@app.get("/backup")
+def backup(db: Session = Depends(get_db)):
+    """전체 데이터 JSON 덤프 (프론트에서 파일로 다운로드)"""
+    parts = db.query(Part).all()
+    pcs = db.query(PCBuild).all()
+    ledger = db.query(LedgerEntry).all()
+    return {
+        "exported_at": datetime.utcnow().isoformat(),
+        "parts": [{"id": p.id, "category": p.category, "brand": p.brand, "model": p.model,
+                   "specs": p.specs, "condition": p.condition, "owned": p.owned,
+                   "purchase_price": p.purchase_price, "market_price": p.market_price,
+                   "pc_id": p.pc_id, "created_at": p.created_at.isoformat() if p.created_at else None}
+                  for p in parts],
+        "pcs": [{"id": pc.id, "name": pc.name, "status": pc.status, "whole": pc.whole,
+                 "purchase_price": pc.purchase_price, "sold_price": pc.sold_price,
+                 "created_at": pc.created_at.isoformat() if pc.created_at else None,
+                 "completed_at": pc.completed_at.isoformat() if pc.completed_at else None,
+                 "sold_at": pc.sold_at.isoformat() if pc.sold_at else None}
+                for pc in pcs],
+        "ledger": [{"id": e.id, "type": e.type, "item": e.item, "price": e.price,
+                    "pc_id": e.pc_id, "date": e.date.isoformat() if e.date else None}
+                   for e in ledger],
+    }
 
 
 # ── Stats (HUD) ───────────────────────────────────────────────

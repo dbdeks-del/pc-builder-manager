@@ -78,7 +78,11 @@ _RARITY_CUTS = {
 }
 
 
-def part_performance(category: str, brand: str, model: str) -> dict:
+# 파워 80+ 인증 등급 → 레어도
+_PSU_RARITY = {"titanium": "legendary", "platinum": "epic", "gold": "rare"}
+
+
+def part_performance(category: str, brand: str, model: str, specs: dict | None = None) -> dict:
     """부품 하나의 벤치마크 점수/백분위/등급"""
     name = f"{brand} {model}".strip()
     if category == "cpu":
@@ -87,6 +91,13 @@ def part_performance(category: str, brand: str, model: str) -> dict:
     elif category == "gpu":
         score = _find_bench(name, _GPU_KEYS)
         pct = _percentile(score, _GPU_SORTED)
+    elif category == "psu":
+        # 80+ 인증 등급 기반 (specs 또는 이름에서)
+        text = f"{(specs or {}).get('efficiency', '')} {name}".lower()
+        for eff, tier in _PSU_RARITY.items():
+            if eff in text:
+                return {"score": 0, "percentile": None, "rarity": tier}
+        return {"score": 0, "percentile": None, "rarity": "common"}
     else:
         return {"score": 0, "percentile": None, "rarity": "common"}
     rarity = "common"
@@ -187,6 +198,31 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
         overall = performance * 0.35 + balance * 0.15 + compat_score * 0.25 + completeness * 0.25
     overall = round(overall)
 
+    # ── 업그레이드 추천 (뭘 바꾸면 몇 점 오르는지) ──
+    upgrades = []
+    if cpu_pct > 0 and gpu_pct > 0 and abs(cpu_pct - gpu_pct) > 10:
+        stronger = max(cpu_pct, gpu_pct)
+        weaker_name = "CPU" if cpu_pct < gpu_pct else "GPU"
+        new_perf = stronger  # 약한 쪽을 강한 쪽 수준으로 맞췄다고 가정
+        if value is not None:
+            new_overall = round(new_perf * 0.30 + 100 * 0.15 + compat_score * 0.25 + completeness * 0.15 + value * 0.15)
+        else:
+            new_overall = round(new_perf * 0.35 + 100 * 0.15 + compat_score * 0.25 + completeness * 0.25)
+        gain = new_overall - overall
+        if gain > 0:
+            upgrades.append({
+                "message": f"{weaker_name}를 상대 백분위 {stronger:.0f} 수준으로 업그레이드하면 밸런스가 맞습니다.",
+                "gain": gain,
+            })
+    for slot in missing:
+        label = {"cpu": "CPU", "motherboard": "메인보드", "ram": "RAM",
+                 "storage": "저장장치", "psu": "파워", "case": "케이스"}.get(slot, slot)
+        upgrades.append({"message": f"{label} 슬롯을 채우면 완성도가 올라갑니다.", "gain": round(100 / len(REQUIRED_SLOTS) * 0.25)})
+    ram_parts = cats.get("ram", [])
+    ram_gb = sum(p.get("specs", {}).get("capacity_gb", 0) or 0 for p in ram_parts)
+    if ram_parts and 0 < ram_gb < 16:
+        upgrades.append({"message": f"RAM {ram_gb}GB → 16GB 이상으로 늘리면 게임/멀티태스킹 체감이 좋아집니다.", "gain": 0})
+
     return {
         "overall": overall,
         "grade": grade_of(overall),
@@ -203,6 +239,7 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
         "gpu": {"benchmark": gpu_bench, "percentile": gpu_pct},
         "purpose_scores": purpose_scores,
         "bottleneck": bottleneck,
+        "upgrades": upgrades,
         "missing_slots": missing,
         "compat_issues": compat["issues"],
         "compat_warnings": compat["warnings"],

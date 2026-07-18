@@ -57,13 +57,17 @@ def to_part(old: dict, pc_id: int | None = None) -> Part:
     )
 
 
-def migrate(path: str):
+def migrate(path: str, force: bool = False):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     init_db()
     db = SessionLocal()
     try:
+        if not force and db.query(Part).count() > 0:
+            print("이미 데이터가 있습니다. 중복 저장을 막기 위해 중단합니다.")
+            print("그래도 이어서 가져오려면: python migrate_pc_manager.py <경로> --force")
+            return
         n_parts = n_pcs = n_ledger = 0
 
         # 창고 부품
@@ -109,7 +113,8 @@ def migrate(path: str):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("사용법: python migrate_pc_manager.py <data.json 경로>")
+    args = [a for a in sys.argv[1:] if a != "--force"]
+    if not args:
+        print("사용법: python migrate_pc_manager.py <data.json 경로> [--force]")
         sys.exit(1)
-    migrate(sys.argv[1])
+    migrate(args[0], force="--force" in sys.argv)

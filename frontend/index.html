@@ -93,7 +93,7 @@ h2 { font-size: 15px; margin: 4px 0 12px; color: var(--dim); font-weight: 600; }
 .bay { border: 1px dashed var(--line); border-radius: 8px; padding: 5px 8px; min-height: 34px; font-size: 12px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; transition: .15s; }
 .bay.over { border-color: var(--accent); background: rgba(108,99,255,.08); }
 .bay.bad { border-color: var(--red); background: rgba(248,81,73,.1); }
-.bay-label { color: var(--dim); font-size: 11px; width: 66px; flex-shrink: 0; }
+.bay-label { color: var(--dim); font-size: 11px; width: 72px; flex-shrink: 0; white-space: nowrap; }
 .bay-part { background: var(--bg3); border-radius: 6px; padding: 2px 7px; display: flex; gap: 5px; align-items: center; }
 .bay-part b { font-weight: 500; font-size: 11.5px; }
 .bay-part .rm { color: var(--red); cursor: pointer; font-size: 11px; }
@@ -144,6 +144,15 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 /* ── 토스트/모달 ─────────────────────── */
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--accent); padding: 10px 20px; border-radius: 24px; font-size: 13px; opacity: 0; transition: .3s; z-index: 99; pointer-events: none; }
 #toast.show { opacity: 1; }
+#modalWrap { position: fixed; inset: 0; background: rgba(5,8,14,.7); display: none; align-items: center; justify-content: center; z-index: 90; }
+#modalWrap.show { display: flex; }
+.modal-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 20px; width: min(420px, 92vw); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.modal-card h3 { font-size: 15px; margin-bottom: 12px; }
+.modal-card .field { margin-bottom: 10px; }
+.modal-card .field label { display: block; font-size: 11.5px; color: var(--dim); margin-bottom: 4px; }
+.modal-card .field input, .modal-card .field select { width: 100%; }
+.modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.wish-badge { font-size: 10px; color: var(--yellow); font-weight: 700; }
 .empty { color: var(--dim); font-size: 13px; padding: 24px; text-align: center; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .mt { margin-top: 12px; }
@@ -159,6 +168,7 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 <header>
   <h1>🖥️ PC <span>플리핑</span> 매니저</h1>
   <div class="hud" id="hud"></div>
+  <button class="btn sm" onclick="downloadBackup()" title="전체 데이터를 JSON 파일로 저장">💾 백업</button>
 </header>
 
 <nav>
@@ -185,6 +195,9 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
       <select id="addCond" style="width:90px">
         <option value="used">중고</option><option value="new">새것</option><option value="broken">고장</option>
       </select>
+      <label style="font-size:12px; display:flex; align-items:center; gap:4px; color:var(--dim)">
+        <input type="checkbox" id="addWish" style="width:auto"> 🌠 위시
+      </label>
       <button class="btn primary" onclick="addPart()">＋ 매입</button>
     </div>
   </div>
@@ -275,6 +288,7 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 
 </main>
 <div id="toast"></div>
+<div id="modalWrap"><div class="modal-card" id="modalCard"></div></div>
 
 <script>
 const API = "http://localhost:8000";
@@ -296,7 +310,7 @@ const BAYS = [
   { key: "cpu",    cats: ["cpu"],          multi: false },
   { key: "motherboard", cats: ["motherboard"], multi: false },
   { key: "ram",    cats: ["ram"],          multi: true },
-  { key: "gpu",    cats: ["gpu"],          multi: false },
+  { key: "gpu",    cats: ["gpu"],          multi: false, label: "그래픽" },
   { key: "storage",cats: ["ssd", "hdd"],   multi: true, label: "저장장치" },
   { key: "psu",    cats: ["psu"],          multi: false },
   { key: "case",   cats: ["case"],         multi: false },
@@ -325,6 +339,42 @@ function parsePrice(s) {
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(t._tm); t._tm = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ── 커스텀 모달 (브라우저 prompt/confirm 대체) ──
+function openModal(bodyHTML, buttons) {
+  return new Promise(resolve => {
+    const wrap = $("modalWrap"), card = $("modalCard");
+    card.innerHTML = bodyHTML + `<div class="modal-btns">` +
+      buttons.map((b, i) => `<button class="btn ${b.cls || ""}" data-mi="${i}">${b.label}</button>`).join("") + `</div>`;
+    wrap.classList.add("show");
+    const close = val => { wrap.classList.remove("show"); card.innerHTML = ""; resolve(val); };
+    card.querySelectorAll("[data-mi]").forEach(btn =>
+      btn.onclick = () => close(buttons[+btn.dataset.mi].value(card)));
+    wrap.onclick = e => { if (e.target === wrap) close(null); };
+    const inp = card.querySelector("input"); if (inp) { inp.focus(); inp.select?.(); }
+  });
+}
+function uiConfirm(title, msg = "") {
+  return openModal(`<h3>${title}</h3>${msg ? `<p style="font-size:12.5px;color:var(--dim)">${msg}</p>` : ""}`,
+    [{ label: "취소", value: () => null }, { label: "확인", cls: "primary", value: () => true }]);
+}
+function uiPrompt(title, { value = "", placeholder = "" } = {}) {
+  return openModal(`<h3>${title}</h3><div class="field"><input id="mInput" value="${esc(value)}" placeholder="${esc(placeholder)}"></div>`,
+    [{ label: "취소", value: () => null }, { label: "확인", cls: "primary", value: c => c.querySelector("#mInput").value }]);
+}
+
+async function downloadBackup() {
+  try {
+    const data = await api("/backup");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `pc_flipping_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("💾 백업 파일 다운로드 완료");
+  } catch (e) { toast("백업 실패: " + e.message); }
 }
 async function api(path, opt = {}) {
   if (opt.json) { opt.body = JSON.stringify(opt.json); opt.headers = { "Content-Type": "application/json" }; delete opt.json; }
@@ -365,26 +415,80 @@ function renderWarehouse() {
   const cats = Object.keys(CATS);
   $("addCat").innerHTML = cats.map(c => `<option value="${c}">${CATS[c].icon} ${CATS[c].label}</option>`).join("");
   const wh = S.parts.filter(p => p.pc_id == null);
-  const counts = { all: wh.length };
+  const counts = { all: wh.length, wish: wh.filter(p => !p.owned).length };
   wh.forEach(p => counts[p.category] = (counts[p.category] || 0) + 1);
   $("whFilters").innerHTML = [`<button class="${whFilter === "all" ? "on" : ""}" onclick="setWhFilter('all')">전체 ${counts.all}</button>`]
+    .concat(counts.wish ? [`<button class="${whFilter === "wish" ? "on" : ""}" onclick="setWhFilter('wish')">🌠 위시리스트 ${counts.wish}</button>`] : [])
     .concat(cats.filter(c => counts[c]).map(c =>
       `<button class="${whFilter === c ? "on" : ""}" onclick="setWhFilter('${c}')">${CATS[c].icon} ${CATS[c].label} ${counts[c]}</button>`)).join("");
-  const list = whFilter === "all" ? wh : wh.filter(p => p.category === whFilter);
+  const list = whFilter === "all" ? wh : whFilter === "wish" ? wh.filter(p => !p.owned) : wh.filter(p => p.category === whFilter);
   $("whGrid").innerHTML = list.length ? list.map(p => `
-    <div class="part-card r-${p.rarity}">
+    <div class="part-card r-${p.rarity}" style="${!p.owned ? "opacity:.75" : ""}">
       <div class="row" style="gap:6px">
         <span class="cat-chip" style="color:${CATS[p.category]?.color}">${CATS[p.category]?.icon} ${CATS[p.category]?.label}</span>
         <span class="rarity-tag">${RARITY_KO[p.rarity]}</span>
+        ${!p.owned ? `<span class="wish-badge">🌠 위시</span>` : ""}
       </div>
       <div class="part-name">${esc(partName(p))}</div>
       <div class="part-sub">${esc(p.specs?.summary || "")}</div>
       <div class="part-sub">매입 ${fmt(p.purchase_price)}${p.market_price ? " · 시세 " + fmt(p.market_price) : ""}</div>
       ${p.percentile ? `<div class="pct-bar" title="벤치마크 상위 ${100 - p.percentile}%"><i style="width:${p.percentile}%"></i></div>` : ""}
-      <div class="part-actions"><button class="btn red sm" onclick="delPart(${p.id})">✕</button></div>
+      <div class="part-actions">
+        ${!p.owned ? `<button class="btn sm" title="매입 확정 (창고로)" onclick="buyWish(${p.id})">📦</button>` : `<button class="btn sm" title="개별 판매" onclick="sellPart(${p.id})">💰</button>`}
+        <button class="btn sm" title="수정" onclick="editPart(${p.id})">✏️</button>
+        <button class="btn red sm" title="삭제" onclick="delPart(${p.id})">✕</button>
+      </div>
     </div>`).join("") : `<div class="empty">창고가 비었습니다. 부품을 매입해보세요!</div>`;
 }
 function setWhFilter(f) { whFilter = f; renderWarehouse(); }
+
+async function sellPart(id) {
+  const p = S.parts.find(x => x.id === id);
+  const v = await uiPrompt(`💰 ${partName(p)} 판매가`, { placeholder: "예: 4만5천", value: p.market_price || "" });
+  if (v == null) return;
+  const price = parsePrice(v);
+  if (!price) return toast("판매가를 입력하세요");
+  const r = await api(`/parts/${id}/sell`, { method: "POST", json: { price } });
+  toast(`💸 판매 완료! 마진 ${r.margin >= 0 ? "+" : ""}${fmt(r.margin)} — 장부에 기록됨`);
+  reload();
+}
+async function editPart(id) {
+  const p = S.parts.find(x => x.id === id);
+  const html = `<h3>✏️ 부품 수정</h3>
+    <div class="field"><label>브랜드</label><input id="eBrand" value="${esc(p.brand || "")}"></div>
+    <div class="field"><label>모델명</label><input id="eModel" value="${esc(p.model || "")}"></div>
+    <div class="field"><label>매입가</label><input id="ePrice" value="${p.purchase_price ?? ""}" placeholder="예: 9만5천"></div>
+    <div class="field"><label>내 시세 메모</label><input id="eMarket" value="${p.market_price ?? ""}" placeholder="예: 12만"></div>
+    <div class="field"><label>상태</label><select id="eCond">
+      <option value="used" ${p.condition === "used" ? "selected" : ""}>중고</option>
+      <option value="new" ${p.condition === "new" ? "selected" : ""}>새것</option>
+      <option value="broken" ${p.condition === "broken" ? "selected" : ""}>고장</option></select></div>`;
+  const res = await openModal(html, [
+    { label: "취소", value: () => null },
+    { label: "저장", cls: "primary", value: c => ({
+      brand: c.querySelector("#eBrand").value.trim(),
+      model: c.querySelector("#eModel").value.trim(),
+      purchase_price: parsePrice(c.querySelector("#ePrice").value) || null,
+      market_price: parsePrice(c.querySelector("#eMarket").value) || null,
+      condition: c.querySelector("#eCond").value,
+    }) },
+  ]);
+  if (!res) return;
+  if (!res.model) return toast("모델명은 비울 수 없어요");
+  await api(`/parts/${id}`, { method: "PUT", json: res });
+  toast("✏️ 수정 완료");
+  reload();
+}
+async function buyWish(id) {
+  const p = S.parts.find(x => x.id === id);
+  const v = await uiPrompt(`📦 ${partName(p)} 매입가`, { placeholder: "예: 5만" });
+  if (v == null) return;
+  const price = parsePrice(v);
+  await api(`/parts/${id}`, { method: "PUT", json: { owned: true, purchase_price: price || null } });
+  if (price) await api("/ledger", { method: "POST", json: { type: "buy", item: partName(p), price } });
+  toast("📦 매입 확정! 창고로 이동했어요");
+  reload();
+}
 
 // 자동완성
 let acTimer = null;
@@ -420,23 +524,25 @@ async function addPart() {
     body = { category: $("addCat").value, brand: tok.length > 1 ? tok[0] : "", model: tok.length > 1 ? tok.slice(1).join(" ") : name, specs: {} };
   }
   body.condition = $("addCond").value;
+  const wish = $("addWish").checked;
+  body.owned = !wish;
   const price = parsePrice($("addPrice").value);
   if (price) body.purchase_price = price;
   await api("/parts", { method: "POST", json: body });
-  if (price) await api("/ledger", { method: "POST", json: { type: "buy", item: name, price } });
-  $("addName").value = ""; $("addPrice").value = ""; selectedDB = null;
-  toast(`📦 ${name} 매입 완료!`);
+  if (price && !wish) await api("/ledger", { method: "POST", json: { type: "buy", item: name, price } });
+  $("addName").value = ""; $("addPrice").value = ""; $("addWish").checked = false; selectedDB = null;
+  toast(wish ? `🌠 ${name} 위시리스트에 추가!` : `📦 ${name} 매입 완료!`);
   reload();
 }
 async function delPart(id) {
-  if (!confirm("이 부품을 삭제할까요?")) return;
+  if (!await uiConfirm("부품 삭제", "이 부품을 삭제할까요? 장부 기록은 남습니다.")) return;
   await api(`/parts/${id}`, { method: "DELETE" });
   reload();
 }
 
 // ── 🛠️ 조립실 ─────────────────────────
 function renderWorkshop() {
-  const wh = S.parts.filter(p => p.pc_id == null);
+  const wh = S.parts.filter(p => p.pc_id == null && p.owned);
   $("whDragList").innerHTML = wh.length ? wh.map(p => `
     <div class="wh-block r-${p.rarity}" draggable="true" ondragstart="dragPart(event, ${p.id})">
       ${CATS[p.category]?.icon} <b>${esc(partName(p))}</b><br><small>${CATS[p.category]?.label} · ${RARITY_KO[p.rarity]}</small>
@@ -445,8 +551,7 @@ function renderWorkshop() {
   const rigs = S.pcs.filter(pc => pc.status === "building");
   $("rigGrid").innerHTML = rigs.length ? rigs.map(renderRig).join("") : `<div class="empty">조립 중인 PC가 없습니다. "새 PC 조립 시작"을 눌러보세요!</div>`;
 
-  const dones = S.pcs.filter(pc => pc.status !== "building");
-  $("doneGrid").innerHTML = dones.length ? dones.map(pc => {
+  const doneCard = pc => {
     const s = pc.score;
     const sold = pc.status === "sold";
     const margin = sold && pc.sold_price != null ? pc.sold_price - (pc.cost || 0) : null;
@@ -455,7 +560,7 @@ function renderWorkshop() {
       <div class="rig-head">
         <div class="grade-badge g-${s.grade}">${s.grade}</div>
         <b style="flex:1">${esc(pc.name)}</b>
-        <span class="cat-chip">${sold ? "💸 판매됨 " + fmt(pc.sold_price) : "✅ 완성"}</span>
+        <span class="cat-chip">${sold ? "💸 " + fmt(pc.sold_price) : "✅ 완성"}</span>
       </div>
       <div class="parts-mini">${pc.parts.map(p => `${CATS[p.category]?.icon} ${esc(partName(p))}`).join("<br>") || "부품 정보 없음"}</div>
       <div class="part-sub">종합 ${s.overall}점 · 투입 ${fmt(pc.cost)}${margin != null ? ` · 마진 <b style="color:${margin >= 0 ? "var(--green)" : "var(--red)"}">${fmt(margin)}</b>` : ""}</div>
@@ -466,7 +571,12 @@ function renderWorkshop() {
         <button class="btn red sm" onclick="dismantlePC(${pc.id})">해체</button>
       </div>
     </div>`;
-  }).join("") : `<div class="empty">완성된 PC가 없습니다</div>`;
+  };
+  const dones = S.pcs.filter(pc => pc.status === "done");
+  const solds = S.pcs.filter(pc => pc.status === "sold");
+  $("doneGrid").innerHTML = (dones.length ? dones.map(doneCard).join("") : `<div class="empty">완성된 PC가 없습니다</div>`) +
+    (solds.length ? `<details style="grid-column:1/-1"><summary style="cursor:pointer; color:var(--dim); font-size:13px; padding:6px 0">💸 판매 완료 (${solds.length}대)</summary>
+      <div class="rig-grid" style="margin-top:10px">${solds.map(doneCard).join("")}</div></details>` : "");
 }
 function renderRig(pc) {
   const s = pc.score;
@@ -537,16 +647,16 @@ async function bayDrop(e) {
 }
 async function detach(pcId, partId) { await api(`/pcs/${pcId}/parts/${partId}`, { method: "DELETE" }); reload(); }
 async function newPC() {
-  const name = prompt("PC 이름", "새 조립 PC");
-  if (name == null) return;
-  await api("/pcs", { method: "POST", json: { name } });
+  const name = await uiPrompt("🛠️ 새 PC 이름", { value: "새 조립 PC" });
+  if (name == null || !name.trim()) return;
+  await api("/pcs", { method: "POST", json: { name: name.trim() } });
   reload();
 }
 async function renamePC(id, name) { if (name.trim()) await api(`/pcs/${id}`, { method: "PUT", json: { name: name.trim() } }); reload(); }
 async function completePC(id) { await api(`/pcs/${id}/complete`, { method: "POST" }); toast("🎉 조립 완성!"); reload(); }
 async function reopenPC(id) { await api(`/pcs/${id}/reopen`, { method: "POST" }); reload(); }
 async function dismantlePC(id) {
-  if (!confirm("해체하면 부품이 창고로 돌아가고 PC 카드는 사라집니다. 진행할까요?")) return;
+  if (!await uiConfirm("🔩 PC 해체", "부품은 창고로 돌아가고 PC 카드는 사라집니다. 장부 기록은 유지돼요.")) return;
   await api(`/pcs/${id}/dismantle`, { method: "POST" });
   toast("🔩 해체 완료 — 부품이 창고로 복귀");
   reload();
@@ -621,9 +731,12 @@ async function renderLab() {
         ${s.compat_issues.map(i => `<span class="issue">⛔ ${esc(i.message)}</span>`).join("")}
         ${s.compat_warnings.map(w => `<span class="warn">⚠️ ${esc(w.message)}</span>`).join("")}
         ${s.bottleneck ? `<span class="warn">🚧 ${esc(s.bottleneck)}</span>` : ""}
-        ${s.missing_slots.length ? `<span style="color:var(--dim)">🧩 부족: ${s.missing_slots.map(m => CATS[m]?.label || "저장장치").join(", ")}</span>` : ""}
         ${pc ? `<span style="color:var(--dim)">💰 투입 비용: ${fmt(pc.cost)}</span>` : ""}
       </div>
+      ${(s.upgrades || []).length ? `<h2 class="mt">🔧 업그레이드 추천</h2>
+      <div class="rig-issues">
+        ${s.upgrades.map(u => `<span style="color:var(--blue)">💡 ${esc(u.message)}${u.gain ? ` <b style="color:var(--green)">+${u.gain}점</b>` : ""}</span>`).join("")}
+      </div>` : ""}
     </div>`;
 }
 
@@ -633,24 +746,28 @@ function renderMarketSelect() {
     S.pcs.filter(pc => pc.status === "done").map(pc => `<option value="${pc.id}">✅ ${esc(pc.name)} (${pc.score.grade} · ${pc.score.overall}점)</option>`).join("");
 }
 function gotoSell(pcId) { showTab("market"); $("mktPC").value = pcId; fetchMarket(); }
-async function fetchMarket() {
+async function fetchMarket(refresh = false) {
   const id = $("mktPC").value;
   if (!id) return toast("PC를 선택하세요");
   const pc = S.pcs.find(p => p.id == id);
-  $("mktResult").innerHTML = `<div class="empty">⏳ 3개 사이트에서 시세를 긁어오는 중... (최대 30초)</div>`;
+  $("mktResult").innerHTML = `<div class="empty">⏳ 시세 ${refresh ? "재조회" : "조회"} 중... (하루 안에 조회한 부품은 캐시로 바로 나와요)</div>`;
   try {
-    const res = await api(`/prices/pc/total?pc_id=${id}`);
+    const res = await api(`/prices/pc/total?pc_id=${id}${refresh ? "&refresh=true" : ""}`);
     const rows = (res.parts || []).map(p => ({
       name: `${p.part.brand || ""} ${p.part.model || ""}`.trim(),
-      avg: p.avg_price, min: p.min_price, max: p.max_price,
+      est: p.estimate, n: p.n_used, min: p.min_price, max: p.max_price,
+      newPrice: p.new_price, cached: p.cached,
     }));
-    const totalAvg = res.total_avg || rows.reduce((a, r) => a + r.avg, 0);
-    const suggested = Math.round(totalAvg / 1000) * 1000;
+    const total = res.total_estimate || 0;
+    const suggested = Math.round(total / 1000) * 1000;
     const cost = pc?.cost || 0;
+    const anyCached = rows.some(r => r.cached);
     $("mktResult").innerHTML = `
-      ${rows.map(r => `<div class="price-row"><span>${esc(r.name)}</span><span>${r.avg ? `${fmt(r.avg)} <small style="color:var(--dim)">(${fmt(r.min)}~${fmt(r.max)})</small>` : '<small style="color:var(--dim)">시세 없음</small>'}</span></div>`).join("")}
+      ${rows.map(r => `<div class="price-row"><span>${esc(r.name)}${r.cached ? ' <small style="color:var(--dim)">🕐캐시</small>' : ""}</span>
+        <span>${r.est ? `<b>${fmt(r.est)}</b> <small style="color:var(--dim)">중고 ${r.n}건 중앙값 (${fmt(r.min)}~${fmt(r.max)})</small>` : '<small style="color:var(--dim)">중고 매물 없음</small>'}${r.newPrice ? ` <small style="color:var(--yellow)">신품 ${fmt(r.newPrice)}</small>` : ""}</span></div>`).join("")}
       <div class="row mt" style="justify-content:space-between">
-        <div>부품 시세 합계 <b>${fmt(totalAvg)}</b> · 투입 비용 ${fmt(cost)}</div>
+        <div>중고 시세 합계 <b>${fmt(total)}</b> · 투입 비용 ${fmt(cost)}</div>
+        ${anyCached ? `<button class="btn sm" onclick="fetchMarket(true)">🔄 최신 시세로 재조회</button>` : ""}
       </div>
       <div class="row mt">
         <input id="sellPrice" value="${suggested || ""}" placeholder="판매가" style="width:140px" oninput="updateMargin(${cost})">
@@ -673,7 +790,7 @@ function updateMargin(cost) {
 async function confirmSell(id) {
   const price = parsePrice($("sellPrice").value);
   if (!price) return toast("판매가를 입력하세요");
-  if (!confirm(`${fmt(price)}에 판매 기록할까요? 장부에 자동 기록됩니다.`)) return;
+  if (!await uiConfirm("💰 판매 확정", `${fmt(price)}에 판매 기록할까요? 장부에 자동 기록됩니다.`)) return;
   await api(`/pcs/${id}/sell`, { method: "POST", json: { price } });
   toast("💸 판매 완료! 장부에 기록됐습니다");
   reload();
@@ -684,8 +801,9 @@ async function searchDeals() {
   $("dealResult").innerHTML = `<div class="empty">⏳ 매물 검색 중...</div>`;
   try {
     const res = await api(`/prices/search?query=${encodeURIComponent(q)}`);
-    $("dealResult").innerHTML = res.length ? res.slice(0, 20).map(r => `
-      <div class="price-row"><span>[${esc(r.source)}] ${r.url ? `<a href="${esc(r.url)}" target="_blank">${esc(r.title)}</a>` : esc(r.title)}</span><b>${fmt(r.price)}</b></div>`).join("")
+    const badge = r => r.condition === "new" ? `<small style="color:var(--yellow)">신품</small>` : `<small style="color:var(--green)">중고</small>`;
+    $("dealResult").innerHTML = res.length ? res.slice(0, 25).map(r => `
+      <div class="price-row"><span>${badge(r)} [${esc(r.source)}] ${r.url ? `<a href="${esc(r.url)}" target="_blank">${esc(r.title)}</a>` : esc(r.title)}</span><b>${fmt(r.price)}</b></div>`).join("")
       : `<div class="empty">매물이 없습니다</div>`;
   } catch (e) { $("dealResult").innerHTML = `<div class="empty">검색 실패: ${esc(e.message)}</div>`; }
 }
@@ -717,7 +835,7 @@ async function addLedger() {
   $("lgItem").value = ""; $("lgPrice").value = "";
   reload();
 }
-async function delLedger(id) { if (confirm("기록을 삭제할까요?")) { await api(`/ledger/${id}`, { method: "DELETE" }); reload(); } }
+async function delLedger(id) { if (await uiConfirm("기록 삭제", "이 장부 기록을 삭제할까요?")) { await api(`/ledger/${id}`, { method: "DELETE" }); reload(); } }
 
 // ── 탭 ────────────────────────────────
 function showTab(name) {
