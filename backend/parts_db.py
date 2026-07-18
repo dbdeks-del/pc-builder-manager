@@ -31,6 +31,8 @@ EN2KO = {
 def _parse_specs(category: str, name: str, s: str) -> dict:
     """스펙 요약 문자열을 카테고리별 구조화 specs로 변환"""
     specs = {"summary": s}
+    if s.startswith("벤치"):  # 벤치마크 DB 유래 항목은 점수 요약뿐이라 파싱 불가
+        return specs
     parts = [p.strip() for p in s.split("·")]
 
     if category == "cpu":
@@ -50,11 +52,14 @@ def _parse_specs(category: str, name: str, s: str) -> dict:
             if m := re.match(r"(\d+)GB", p):
                 specs["vram_gb"] = int(m.group(1))
     elif category == "motherboard":
-        # 예: "AM5 · ATX"
+        # 예: "AM5 · ATX" 또는 "AM3+ · ATX · DDR3"
         if len(parts) >= 1 and parts[0]:
             specs["socket"] = parts[0]
         if len(parts) >= 2 and parts[1]:
             specs["form_factor"] = parts[1]
+        for p in parts[2:]:
+            if p.upper().startswith("DDR"):
+                specs["ddr_type"] = p.upper()
     elif category == "ram":
         # 예: "5-6000 · 2x16"  (DDR세대-속도 · 모듈x용량)
         if parts and (m := re.match(r"(\d)-(\d+)", parts[0])):

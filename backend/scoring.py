@@ -24,7 +24,9 @@ def _build_keys(entries: list[dict]) -> dict:
         key, score = e.get("key"), e.get("score", 0)
         if not key:
             continue
-        variants = {key, re.sub(r"(\s+\d+)*\s*[\d.]+\s*[gm]hz$", "", key).strip()}
+        no_clock = re.sub(r"(\s+\d+)*\s*[\d.]+\s*[gm]hz$", "", key).strip()
+        no_cores = re.sub(r"\s+(dual|triple|quad|six|eight|ten|twelve|sixteen)([- ]?core)?$", "", no_clock).strip()
+        variants = {key, no_clock, no_cores}
         for v in variants:
             v = normalize(v)
             if v and (v not in keys or score > keys[v]):
