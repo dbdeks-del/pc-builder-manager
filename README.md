@@ -5,6 +5,14 @@
 
 ## 실행 방법
 
+### A. 실행파일(.exe)만 있으면 — Python 설치 불필요
+
+[Actions 탭](../../actions/workflows/build-exe.yml)에서 최신 빌드의 `PCFlippingManager-windows` 아티팩트를 받거나,
+태그(`v*`)로 릴리즈된 버전이 있으면 릴리즈 페이지에서 `PCFlippingManager.exe`를 받아 더블클릭하면 됩니다.
+서버가 켜지고 브라우저가 자동으로 열립니다. 데이터는 exe 파일 옆에 `pc_builder.db`로 저장됩니다.
+
+### B. 소스로 직접 실행 — Python 필요
+
 1. **Python 3.10 이상 설치** — https://www.python.org/downloads/
    설치할 때 **"Add Python to PATH"** 체크 필수.
 2. 저장소 클론:
@@ -13,8 +21,13 @@
    ```
 3. `start.bat` **더블클릭**.
    - 첫 실행 시 필요한 라이브러리를 자동 설치합니다(인터넷 필요).
-   - backend 서버(http://localhost:8000)가 켜지고 브라우저가 자동으로 열립니다.
-4. 종료하려면 실행 창에서 아무 키나 누르세요.
+   - 서버(http://localhost:8000)가 켜지고 브라우저가 자동으로 열립니다. 프론트엔드도 같은 서버가 직접 서빙합니다.
+4. 종료하려면 실행 창을 닫거나 Ctrl+C.
+
+### C. 직접 .exe 빌드하기
+
+Windows에서 `build_exe.bat`을 더블클릭하면 `backend\dist\PCFlippingManager.exe`가 만들어집니다.
+이 파일 하나만 복사하면 다른 PC에서도 Python 설치 없이 실행됩니다.
 
 ## 5개 구역 (게임 루프)
 
@@ -62,14 +75,26 @@ python migrate_pc_manager.py <PC-Manager 폴더>\data.json
 
 ## 구조
 
-- `backend/` — FastAPI 서버
-  - `main.py` — API (부품/PC/장부 CRUD, 점수, 시세)
+- `backend/` — FastAPI 서버 (프론트엔드도 이 서버가 `/`에서 직접 서빙 — 프로세스 1개, 포트 1개)
+  - `main.py` — API (부품/PC/장부 CRUD, 점수, 시세) + 프론트엔드 서빙
+  - `database.py` — SQLite 데이터 계층. **표준 라이브러리 `sqlite3`만 사용**(ORM 없음)
   - `scoring.py` — 종합점수 엔진 (`benchmark_db.json` 사용)
   - `compatibility.py` — 소켓/DDR/파워 호환성 + 병목 분석
   - `crawler.py` — 다나와·번개장터·중고나라 시세 크롤러
-  - `parts_db.py` — 부품 카탈로그 검색 (`parts_db.json`, 23,512개)
+  - `parts_db.py` — 부품 카탈로그 검색 (`parts_db.json`, 30,123개)
   - `migrate_pc_manager.py` — PC-Manager 데이터 이전 스크립트
+  - `launcher.py` — 실행 진입점 (서버 시작 + 브라우저 자동 오픈). `start.bat`과 exe 빌드 모두 이걸 씀
+  - `paths.py` — 개발 환경/exe 번들 모두에서 동작하는 경로 헬퍼
+  - `pc_flipping_manager.spec` — PyInstaller 빌드 스펙
 - `frontend/index.html` — 웹 UI (단일 파일)
-- `start.bat` — 원클릭 실행 스크립트
+- `start.bat` / `build_exe.bat` — 실행 / exe 빌드 스크립트
+- `.github/workflows/build-exe.yml` — main 브랜치 푸시·태그·수동 실행 시 Windows에서 자동으로 exe 빌드
 
-데이터는 `backend/pc_builder.db`(SQLite)에 저장됩니다.
+데이터는 `pc_builder.db`(SQLite)에 저장됩니다 — 소스 실행 시 `backend/` 폴더, exe 실행 시 exe 파일 옆.
+
+## 가벼운 구조
+
+의존성은 5개뿐입니다 — `fastapi`, `uvicorn`, `aiohttp`, `beautifulsoup4`, `pydantic`.
+SQLAlchemy, selenium, webdriver-manager, requests, python-dotenv는 전부 걷어냈습니다
+(SQLAlchemy는 안 쓰는 ORM 기능 대신 얇은 `sqlite3` 헬퍼로, selenium 계열은 애초에 코드에서
+쓰이지 않던 죽은 의존성이었습니다).

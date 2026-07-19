@@ -291,7 +291,7 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 <div id="modalWrap"><div class="modal-card" id="modalCard"></div></div>
 
 <script>
-const API = "http://localhost:8000";
+const API = "";  // 백엔드가 프론트를 같은 오리진에서 직접 서빙하므로 상대경로면 충분
 
 const CATS = {
   cpu:        { label: "CPU",      icon: "🧠", color: "var(--cpu)" },

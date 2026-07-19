@@ -6,15 +6,13 @@
 """
 import bisect
 import json
-import os
 import re
 from functools import lru_cache
 
 from compatibility import check_compatibility, _normalize as normalize, longest_match
+from paths import resource_path
 
-_BASE = os.path.dirname(os.path.abspath(__file__))
-
-with open(os.path.join(_BASE, "benchmark_db.json"), encoding="utf-8") as f:
+with open(resource_path("benchmark_db.json"), encoding="utf-8") as f:
     _BENCH = json.load(f)
 
 def _build_keys(entries: list[dict]) -> dict:

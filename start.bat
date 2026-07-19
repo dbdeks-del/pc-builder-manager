@@ -1,54 +1,46 @@
 @echo off
 chcp 65001 >nul
-title PC Builder Manager
+title PC 플리핑 매니저
 echo ========================================
-echo   PC Builder Manager - Starting...
+echo   PC 플리핑 매니저 - 시작 중...
 echo ========================================
 echo.
 
 cd /d "%~dp0"
 
-REM ---- Check Python ----
+REM ---- Python 확인 ----
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH.
-    echo         Install Python 3.10+ from https://www.python.org/downloads/
-    echo         Be sure to check "Add Python to PATH" during install.
+    echo [오류] Python이 설치되어 있지 않습니다.
+    echo        https://www.python.org/downloads/ 에서 Python 3.10 이상을 설치하세요.
+    echo        설치할 때 "Add Python to PATH"를 꼭 체크하세요.
     echo.
     pause
     exit /b 1
 )
 
-REM ---- Install dependencies on first run ----
+REM ---- 첫 실행 시에만 의존성 설치 ----
 if not exist "backend\.installed" (
-    echo [1/3] Installing dependencies ^(first run only^)...
+    echo [1/2] 필요한 라이브러리 설치 중 ^(최초 1회, 인터넷 필요^)...
     python -m pip install --upgrade pip >nul 2>&1
     python -m pip install -r backend\requirements.txt
     if errorlevel 1 (
-        echo [ERROR] Failed to install dependencies. Check your internet connection.
+        echo [오류] 라이브러리 설치 실패. 인터넷 연결을 확인하세요.
         echo.
         pause
         exit /b 1
     )
     echo done > "backend\.installed"
 ) else (
-    echo [1/3] Dependencies already installed.
+    echo [1/2] 라이브러리 설치 확인됨.
 )
 
-echo [2/3] Starting backend server...
-start "PC Builder Backend" cmd /k "cd /d "%~dp0backend" && python -m uvicorn main:app --reload --port 8000"
+echo [2/2] 서버 실행 중... 잠시 후 브라우저가 자동으로 열립니다.
+echo.
 
-echo [3/3] Opening browser...
-timeout /t 3 /nobreak >nul
-start "" "frontend\index.html"
+cd backend
+python launcher.py
 
 echo.
-echo PC Builder Manager is running!
-echo    Backend: http://localhost:8000
-echo    Frontend: opened in your browser
-echo.
-echo Press any key to stop all services...
+echo 종료되었습니다.
 pause >nul
-
-taskkill /f /fi "WINDOWTITLE eq PC Builder Backend" >nul 2>&1
-echo Stopped.

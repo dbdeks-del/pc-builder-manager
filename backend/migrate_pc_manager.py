@@ -12,20 +12,19 @@ import json
 import sys
 from datetime import datetime
 
-from database import init_db, SessionLocal
-from models import Part, PCBuild, LedgerEntry
+from database import init_db, get_conn, insert
 from parts_db import KO2EN, _split_brand
 
 
-def parse_date(s: str | None) -> datetime:
+def parse_date(s: str | None) -> str:
     if not s:
-        return datetime.utcnow()
+        return datetime.utcnow().isoformat()
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(s, fmt)
+            return datetime.strptime(s, fmt).isoformat()
         except ValueError:
             continue
-    return datetime.utcnow()
+    return datetime.utcnow().isoformat()
 
 
 def map_category(ko_cat: str, name: str, spec: str) -> str:
@@ -38,21 +37,23 @@ def map_category(ko_cat: str, name: str, spec: str) -> str:
     return cat
 
 
-def to_part(old: dict, pc_id: int | None = None) -> Part:
+def to_part_fields(old: dict, pc_id: int | None = None) -> dict:
     name = (old.get("name") or "").strip()
     brand, model = _split_brand(name)
     spec = old.get("spec") or ""
-    return Part(
+    ts = parse_date(old.get("added"))
+    return dict(
         category=map_category(old.get("cat", "기타"), name, spec),
         brand=brand,
         model=model,
-        specs={"summary": spec} if spec else {},
+        specs=json.dumps({"summary": spec} if spec else {}),
         condition="used",
-        owned=True,
+        owned=1,
         purchase_price=old.get("price") or None,
         market_price=old.get("marketPrice") or None,
         pc_id=pc_id,
-        created_at=parse_date(old.get("added")),
+        created_at=ts,
+        updated_at=ts,
     )
 
 
@@ -61,9 +62,10 @@ def migrate(path: str, force: bool = False):
         data = json.load(f)
 
     init_db()
-    db = SessionLocal()
+    conn = get_conn()
     try:
-        if not force and db.query(Part).count() > 0:
+        existing = conn.execute("SELECT COUNT(*) FROM parts").fetchone()[0]
+        if not force and existing > 0:
             print("이미 데이터가 있습니다. 중복 저장을 막기 위해 중단합니다.")
             print("그래도 이어서 가져오려면: python migrate_pc_manager.py <경로> --force")
             return
@@ -71,7 +73,7 @@ def migrate(path: str, force: bool = False):
 
         # 창고 부품
         for old in data.get("parts", []):
-            db.add(to_part(old))
+            insert(conn, "parts", **to_part_fields(old))
             n_parts += 1
 
         # PC (장착 부품 포함)
@@ -79,36 +81,35 @@ def migrate(path: str, force: bool = False):
             status = old_pc.get("status", "building")
             if status not in ("building", "done", "sold"):
                 status = "building"
-            pc = PCBuild(
+            pc_id = insert(
+                conn, "pcs",
                 name=old_pc.get("name", "이름 없음"),
                 status="sold" if old_pc.get("soldPrice") else status,
-                whole=bool(old_pc.get("whole")),
+                whole=int(bool(old_pc.get("whole"))),
                 purchase_price=old_pc.get("purchasePrice") or None,
                 sold_price=old_pc.get("soldPrice") or None,
                 created_at=parse_date(old_pc.get("created") or old_pc.get("purchaseDate")),
                 completed_at=parse_date(old_pc.get("completed")) if old_pc.get("completed") else None,
             )
-            db.add(pc)
-            db.flush()
             for old_part in old_pc.get("parts", []):
-                db.add(to_part(old_part, pc_id=pc.id))
+                insert(conn, "parts", **to_part_fields(old_part, pc_id=pc_id))
                 n_parts += 1
             n_pcs += 1
 
         # 장부
         for old in data.get("ledger", []):
-            db.add(LedgerEntry(
+            insert(
+                conn, "ledger",
                 type=old.get("type", "buy"),
                 item=old.get("item", ""),
                 price=old.get("price") or 0,
                 date=parse_date(old.get("date")),
-            ))
+            )
             n_ledger += 1
 
-        db.commit()
         print(f"마이그레이션 완료: 부품 {n_parts}개, PC {n_pcs}대, 장부 {n_ledger}건")
     finally:
-        db.close()
+        conn.close()
 
 
 if __name__ == "__main__":

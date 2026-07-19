@@ -4,10 +4,9 @@
 - 스펙 요약 문자열(s)을 구조화된 specs로 파싱 (호환성 검사에 사용)
 """
 import json
-import os
 import re
 
-_BASE = os.path.dirname(os.path.abspath(__file__))
+from paths import resource_path
 
 KO2EN = {
     "CPU": "cpu",
@@ -91,8 +90,7 @@ def _split_brand(name: str) -> tuple[str, str]:
 
 
 def _load() -> list[dict]:
-    path = os.path.join(_BASE, "parts_db.json")
-    with open(path, encoding="utf-8") as f:
+    with open(resource_path("parts_db.json"), encoding="utf-8") as f:
         raw = json.load(f)
 
     db = []
