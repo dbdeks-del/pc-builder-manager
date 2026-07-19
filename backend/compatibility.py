@@ -362,28 +362,58 @@ _CPU_SCORE_MAX = 65000
 _GPU_SCORE_MAX = 22000
 
 
+import re
+
+
+# 한글 표기 → 영문 (매칭 전 치환)
+KOREAN_ALIASES = [
+    ("쓰레드리퍼", "threadripper"), ("스레드리퍼", "threadripper"),
+    ("라이젠", "ryzen"), ("인텔", "intel"), ("코어", "core"),
+    ("지포스", "geforce"), ("라데온", "radeon"),
+    ("펜티엄", "pentium"), ("셀러론", "celeron"), ("제온", "xeon"),
+]
+
+
+def _normalize(s: str) -> str:
+    """공백/기호 제거 소문자화 + 한글 별칭 치환 — '라이젠5 3600'과 'ryzen 5 3600' 매칭용"""
+    s = s.lower()
+    for ko, en in KOREAN_ALIASES:
+        s = s.replace(ko, en)
+    return re.sub(r"[^a-z0-9가-힣]", "", s)
+
+
+def longest_match(name_norm: str, normalized_map: dict):
+    """정규화된 이름에서, 정규화된 키들 중 가장 긴 부분일치 키의 값을 반환.
+    호출부는 각자의 방식으로 정규화를 마친 맵을 넘긴다 (scoring.py도 이 함수를 재사용)."""
+    best_val, best_len = None, 0
+    for key_norm, val in normalized_map.items():
+        if key_norm in name_norm and len(key_norm) > best_len:
+            best_val, best_len = val, len(key_norm)
+    return best_val
+
+
+# 정적 맵(소켓/점수/TDP 테이블)의 정규화 결과 캐시 — 맵은 모듈 로드 시 한 번만 만들어지는
+# 전역 상수이므로 id() 기반 캐시로 충분하고, 매 조회마다 모든 키를 재정규화하지 않아도 된다.
+_norm_map_cache: dict[int, dict[str, object]] = {}
+
+
+def _normalized_map(mapping: dict) -> dict:
+    cached = _norm_map_cache.get(id(mapping))
+    if cached is None:
+        cached = {_normalize(k): v for k, v in mapping.items()}
+        _norm_map_cache[id(mapping)] = cached
+    return cached
+
+
 def find_score(name: str, score_map: dict) -> float:
     """이름으로 점수를 찾음 (가장 긴 키 우선으로 매칭)"""
-    name_lower = name.lower()
-    best_key = None
-    best_len = 0
-    for key in score_map:
-        if key in name_lower and len(key) > best_len:
-            best_key = key
-            best_len = len(key)
-    return score_map[best_key] if best_key else 0
+    val = longest_match(_normalize(name), _normalized_map(score_map))
+    return val if val is not None else 0
 
 
 def find_socket(name: str, socket_map: dict) -> str | None:
     """이름으로 소켓/슬롯 정보를 찾음 (가장 긴 키 우선)"""
-    name_lower = name.lower()
-    best_key = None
-    best_len = 0
-    for key in socket_map:
-        if key in name_lower and len(key) > best_len:
-            best_key = key
-            best_len = len(key)
-    return socket_map[best_key] if best_key else None
+    return longest_match(_normalize(name), _normalized_map(socket_map))
 
 
 def check_compatibility(parts: list[dict]) -> dict:

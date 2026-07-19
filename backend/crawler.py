@@ -1,11 +1,22 @@
 """
-다나와, 당근마켓, 중고나라 중고 시세 크롤러
+시세 크롤러 — 다나와(신품가 기준점) · 번개장터(중고) · 중고나라(중고)
+
+정확도 개선:
+- 부품 시세 조회 시 완본체/노트북/세트 매물 제외 (부품 단품 가격만)
+- 제목에 모델 번호 토큰이 실제로 포함된 매물만 인정
+- 비정상 가격(1만 미만 / 500만 초과) 제외
+- 통계는 평균 대신 중앙값 + IQR 이상치 제거 (calculate_pc_value)
 """
 import asyncio
-import aiohttp
+import json
 import re
+import statistics
 from urllib.parse import quote
+
+import aiohttp
 from bs4 import BeautifulSoup
+
+from compatibility import _normalize as _norm
 
 HEADERS = {
     "User-Agent": (
@@ -15,6 +26,58 @@ HEADERS = {
     ),
     "Accept-Language": "ko-KR,ko;q=0.9",
 }
+
+# 부품 검색인데 완본체/노트북 매물이 섞이는 걸 거르는 패턴
+FULLPC_RE = re.compile(
+    r"본체|컴퓨터|노트북|세트|풀\s?셋|데스크탑|데스크톱|조립\s?PC|완본체|게이밍\s?PC|일체형|맥북|아이맥",
+    re.IGNORECASE,
+)
+# 고장/부품용 매물 (정상품 시세를 왜곡)
+BROKEN_RE = re.compile(r"고장|불량|파손|부품용|수리용|뻥파워|AS용", re.IGNORECASE)
+
+MIN_PRICE = 10_000
+MAX_PRICE = 5_000_000
+
+
+def model_tokens(query: str) -> list[str]:
+    """모델 식별력이 있는 토큰(숫자 포함 단어)만 추출. 예: 'GTX 1660 6GB' → ['gtx', '1660']"""
+    tokens = []
+    for t in re.split(r"[\s\-/]+", query.lower()):
+        t = re.sub(r"[^a-z0-9]", "", t)
+        if not t or t in ("gb", "tb", "중고"):
+            continue
+        # 용량 표기(6gb, 500gb)는 식별 토큰에서 제외
+        if re.fullmatch(r"\d+(gb|tb|g|t)", t):
+            continue
+        tokens.append(t)
+    return tokens[:4]
+
+
+def is_relevant(title: str, tokens: list[str]) -> bool:
+    """제목에 모델 토큰이 모두 포함돼 있는지 (공백/기호 무시)"""
+    t = _norm(title)
+    digit_tokens = [tok for tok in tokens if any(c.isdigit() for c in tok)]
+    check = digit_tokens or tokens
+    return all(tok in t for tok in check)
+
+
+def clean_listings(listings: list[dict], query: str, parts_only: bool = True) -> list[dict]:
+    """관련성/완본체/가격 필터"""
+    tokens = model_tokens(query)
+    out = []
+    for it in listings:
+        price = it.get("price", 0)
+        if not (MIN_PRICE <= price <= MAX_PRICE):
+            continue
+        title = it.get("title", "")
+        if parts_only and FULLPC_RE.search(title):
+            continue
+        if parts_only and BROKEN_RE.search(title):
+            continue
+        if tokens and not is_relevant(title, tokens):
+            continue
+        out.append(it)
+    return out
 
 
 async def fetch(session: aiohttp.ClientSession, url: str, **kwargs) -> str | None:
@@ -27,144 +90,87 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs) -> str | Non
     return None
 
 
-async def search_danawa(query: str) -> list[dict]:
-    """다나와 중고장터 검색"""
-    results = []
-    url = f"https://m.danawa.com/search/?query={quote(query)}&cate=0"
-
-    async with aiohttp.ClientSession() as session:
-        html = await fetch(session, url)
-        if not html:
-            return results
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # 다나와 상품 카드 파싱
-        items = soup.select(".prod_info") or soup.select(".item_product_info")
-        for item in items[:5]:
-            title_el = item.select_one(".prod_name a") or item.select_one("a")
-            price_el = item.select_one(".price_sect strong") or item.select_one(".prc_item")
-
-            if not title_el:
-                continue
-
-            title = title_el.get_text(strip=True)
-            price_text = price_el.get_text(strip=True) if price_el else ""
-            price = parse_price(price_text)
-
-            href = title_el.get("href", "")
-            if href and not href.startswith("http"):
-                href = "https://m.danawa.com" + href
-
-            if title:
-                results.append({
-                    "source": "danawa",
-                    "title": title,
-                    "price": price,
-                    "url": href,
-                })
-
-    return results
-
-
-async def search_danawa_direct(query: str) -> list[dict]:
-    """다나와 PC 부품 가격 직접 검색"""
+async def search_danawa_direct(query: str, session: aiohttp.ClientSession) -> list[dict]:
+    """다나와 최저가 검색 — 신품 가격 기준점 (condition=new)"""
     results = []
     url = f"https://search.danawa.com/dsearch.php?query={quote(query)}&tab=goods"
 
-    async with aiohttp.ClientSession() as session:
-        html = await fetch(session, url)
-        if not html:
-            return results
+    html = await fetch(session, url)
+    if not html:
+        return results
 
-        soup = BeautifulSoup(html, "html.parser")
-        items = soup.select(".prod_main_info")
-
-        for item in items[:5]:
-            name_el = item.select_one(".prod_name a")
-            price_el = item.select_one(".price-sect strong")
-
-            if not name_el:
-                continue
-
-            name = name_el.get_text(strip=True)
-            price_text = price_el.get_text(strip=True) if price_el else ""
-            price = parse_price(price_text)
-
-            href = name_el.get("href", "")
-            results.append({
-                "source": "danawa",
-                "title": name,
-                "price": price,
-                "url": href,
-            })
+    soup = BeautifulSoup(html, "html.parser")
+    for item in soup.select(".prod_main_info")[:8]:
+        name_el = item.select_one(".prod_name a")
+        price_el = item.select_one(".price_sect strong")
+        if not name_el:
+            continue
+        price = parse_price(price_el.get_text(strip=True) if price_el else "")
+        if not price:
+            continue
+        results.append({
+            "source": "danawa",
+            "condition": "new",
+            "title": name_el.get_text(strip=True),
+            "price": price,
+            "url": name_el.get("href", ""),
+        })
 
     return results
 
 
-async def search_junggo(query: str) -> list[dict]:
-    """중고나라 검색 (카페 검색)"""
+async def search_bunjang(query: str, session: aiohttp.ClientSession) -> list[dict]:
+    """번개장터 API 검색 (중고)"""
     results = []
-    url = f"https://www.joongna.com/search?keyword={quote(query)}"
+    url = f"https://api.bunjang.co.kr/api/1/find_v2.json?q={quote(query)}&order=score&n=30&stat=ok"
 
-    async with aiohttp.ClientSession() as session:
-        html = await fetch(session, url)
-        if not html:
-            return results
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # 중고나라 상품 리스트
-        items = soup.select(".item_list li") or soup.select("[class*='item']")
-        for item in items[:5]:
-            title_el = item.select_one(".item_title") or item.select_one("a")
-            price_el = item.select_one(".item_price") or item.select_one("[class*='price']")
-
-            if not title_el:
-                continue
-
-            title = title_el.get_text(strip=True)
-            price_text = price_el.get_text(strip=True) if price_el else ""
-            price = parse_price(price_text)
-
-            href = title_el.get("href", "") if title_el.name == "a" else ""
-            if href and not href.startswith("http"):
-                href = "https://www.joongna.com" + href
-
-            if title and price:
-                results.append({
-                    "source": "joongna",
-                    "title": title,
-                    "price": price,
-                    "url": href,
-                })
+    try:
+        async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for item in data.get("list", [])[:30]:
+                    price = int(item.get("price", 0) or 0)
+                    name = item.get("name", "")
+                    pid = item.get("pid", "")
+                    if name and price:
+                        results.append({
+                            "source": "bunjang",
+                            "condition": "used",
+                            "title": name,
+                            "price": price,
+                            "url": f"https://m.bunjang.co.kr/products/{pid}",
+                        })
+    except Exception:
+        pass
 
     return results
 
 
-async def search_bunjang(query: str) -> list[dict]:
-    """번개장터 API 검색"""
+async def search_junggo(query: str, session: aiohttp.ClientSession) -> list[dict]:
+    """중고나라 검색 API (중고)"""
     results = []
-    url = f"https://api.bunjang.co.kr/api/1/find_v2.json?q={quote(query)}&order=date&n=10&stat=ok"
+    url = "https://search-api.joongna.com/v3/search/all"
+    headers = {**HEADERS, "Content-Type": "application/json", "Origin": "https://web.joongna.com"}
+    body = json.dumps({"searchWord": query, "page": 0, "size": 30})
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    for item in data.get("list", [])[:5]:
-                        price = int(item.get("price", 0))
-                        name = item.get("name", "")
-                        pid = item.get("pid", "")
-                        if name and price:
-                            results.append({
-                                "source": "bunjang",
-                                "title": name,
-                                "price": price,
-                                "url": f"https://m.bunjang.co.kr/products/{pid}",
-                            })
-        except Exception:
-            pass
+    try:
+        async with session.post(url, data=body, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for item in (data.get("data", {}).get("items") or [])[:30]:
+                    price = int(item.get("price", 0) or 0)
+                    title = item.get("title", "")
+                    seq = item.get("seq", "")
+                    if title and price:
+                        results.append({
+                            "source": "joongna",
+                            "condition": "used",
+                            "title": title,
+                            "price": price,
+                            "url": f"https://web.joongna.com/product/{seq}",
+                        })
+    except Exception:
+        pass
 
     return results
 
@@ -174,64 +180,90 @@ def parse_price(text: str) -> int:
     if not text:
         return 0
     nums = re.sub(r"[^\d]", "", text)
-    if not nums:
-        return 0
-    price = int(nums)
-    # 원 단위 보정 (ex: 150,000 → 150000)
-    return price
+    return int(nums) if nums else 0
 
 
 async def get_part_prices(brand: str, model: str, category: str) -> list[dict]:
-    """부품 종합 시세 조회"""
-    query = f"{brand} {model} 중고".strip()
+    """부품 시세 조회 — 3개 소스 병렬 + 단품 필터 적용 (세션 공유로 연결 재사용)"""
+    query = f"{brand} {model}".strip()
 
-    tasks = [
-        search_danawa_direct(f"{brand} {model}"),
-        search_bunjang(query),
-        search_junggo(query),
-    ]
-
-    results_list = await asyncio.gather(*tasks, return_exceptions=True)
+    async with aiohttp.ClientSession() as session:
+        results_list = await asyncio.gather(
+            search_danawa_direct(query, session),
+            search_bunjang(query, session),
+            search_junggo(query, session),
+            return_exceptions=True,
+        )
 
     all_results = []
     for r in results_list:
         if isinstance(r, list):
             all_results.extend(r)
 
-    # 가격 있는 것만, 가격순 정렬
-    valid = [r for r in all_results if r.get("price", 0) > 0]
-    valid.sort(key=lambda x: x["price"])
-
+    valid = clean_listings(all_results, query, parts_only=(category != "etc"))
+    # 중고 먼저, 가격 오름차순
+    valid.sort(key=lambda x: (x.get("condition") != "used", x.get("price", 0)))
     return valid
 
 
+def robust_price_stats(prices: list[int]) -> dict | None:
+    """중앙값 + IQR 이상치 제거 통계"""
+    if not prices:
+        return None
+    s = sorted(prices)
+    if len(s) >= 4:
+        q1 = s[len(s) // 4]
+        q3 = s[(3 * len(s)) // 4]
+        iqr = q3 - q1
+        lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        filtered = [p for p in s if lo <= p <= hi] or s
+    else:
+        filtered = s
+    return {
+        "median": int(statistics.median(filtered)),
+        "min": min(filtered),
+        "max": max(filtered),
+        "count": len(filtered),
+    }
+
+
 def calculate_pc_value(parts_with_prices: list[dict]) -> dict:
-    """PC 전체 중고 가치 계산"""
+    """PC 전체 중고 가치 계산 — 중고 매물 중앙값 기반"""
+    part_values = []
+    total_estimate = 0
     total_min = 0
     total_max = 0
-    part_values = []
 
     for item in parts_with_prices:
-        prices = [p["price"] for p in item.get("prices", []) if p.get("price", 0) > 0]
-        if prices:
-            min_price = min(prices)
-            max_price = max(prices)
-            avg_price = int(sum(prices) / len(prices))
-            total_min += min_price
-            total_max += max_price
-        else:
-            min_price = max_price = avg_price = 0
+        prices = item.get("prices", [])
+        used = [p["price"] for p in prices if p.get("condition") == "used" and p.get("price", 0) > 0]
+        new_prices = [p["price"] for p in prices if p.get("condition") == "new" and p.get("price", 0) > 0]
+
+        stats = robust_price_stats(used)
+        estimate = stats["median"] if stats else None
+
+        # 다나와 신품가 sanity: 중고 중앙값보다 싼 "신품"은 액세서리/오검색 → 제외
+        floor = estimate or MIN_PRICE
+        sane_new = [p for p in new_prices if p >= floor]
+        new_price = min(sane_new) if sane_new else None
+        if estimate:
+            total_estimate += estimate
+            total_min += stats["min"]
+            total_max += stats["max"]
 
         part_values.append({
             "part": item["part"],
-            "min_price": min_price,
-            "max_price": max_price,
-            "avg_price": avg_price,
+            "estimate": estimate,          # 중고 중앙값 (권장가 기준)
+            "n_used": stats["count"] if stats else 0,
+            "min_price": stats["min"] if stats else 0,
+            "max_price": stats["max"] if stats else 0,
+            "new_price": new_price,        # 다나와 신품 최저가 (참고)
+            "cached": item.get("cached", False),
         })
 
     return {
         "parts": part_values,
+        "total_estimate": total_estimate,
         "total_min": total_min,
         "total_max": total_max,
-        "total_avg": int((total_min + total_max) / 2) if (total_min + total_max) > 0 else 0,
     }

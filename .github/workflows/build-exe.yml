@@ -1,0 +1,55 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        working-directory: backend
+        run: pyinstaller pc_flipping_manager.spec --noconfirm
+
+      - name: Smoke test the built executable
+        working-directory: backend/dist
+        shell: pwsh
+        run: |
+          $env:PCFM_NO_BROWSER = "1"
+          $proc = Start-Process -FilePath ".\PCFlippingManager.exe" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 8
+          try {
+            $resp = Invoke-WebRequest -Uri http://127.0.0.1:8000/stats -UseBasicParsing -TimeoutSec 10
+            if ($resp.StatusCode -ne 200) { throw "Unexpected status code: $($resp.StatusCode)" }
+            Write-Host "Smoke test passed:" $resp.Content
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PCFlippingManager-windows
+          path: backend/dist/PCFlippingManager.exe
+          retention-days: 30
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: backend/dist/PCFlippingManager.exe
