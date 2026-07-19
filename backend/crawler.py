@@ -16,6 +16,8 @@ from urllib.parse import quote
 import aiohttp
 from bs4 import BeautifulSoup
 
+from compatibility import _normalize as _norm
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -35,10 +37,6 @@ BROKEN_RE = re.compile(r"고장|불량|파손|부품용|수리용|뻥파워|AS�
 
 MIN_PRICE = 10_000
 MAX_PRICE = 5_000_000
-
-
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9가-힣]", "", s.lower())
 
 
 def model_tokens(query: str) -> list[str]:
@@ -92,90 +90,87 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs) -> str | Non
     return None
 
 
-async def search_danawa_direct(query: str) -> list[dict]:
+async def search_danawa_direct(query: str, session: aiohttp.ClientSession) -> list[dict]:
     """다나와 최저가 검색 — 신품 가격 기준점 (condition=new)"""
     results = []
     url = f"https://search.danawa.com/dsearch.php?query={quote(query)}&tab=goods"
 
-    async with aiohttp.ClientSession() as session:
-        html = await fetch(session, url)
-        if not html:
-            return results
+    html = await fetch(session, url)
+    if not html:
+        return results
 
-        soup = BeautifulSoup(html, "html.parser")
-        for item in soup.select(".prod_main_info")[:8]:
-            name_el = item.select_one(".prod_name a")
-            price_el = item.select_one(".price_sect strong")
-            if not name_el:
-                continue
-            price = parse_price(price_el.get_text(strip=True) if price_el else "")
-            if not price:
-                continue
-            results.append({
-                "source": "danawa",
-                "condition": "new",
-                "title": name_el.get_text(strip=True),
-                "price": price,
-                "url": name_el.get("href", ""),
-            })
+    soup = BeautifulSoup(html, "html.parser")
+    for item in soup.select(".prod_main_info")[:8]:
+        name_el = item.select_one(".prod_name a")
+        price_el = item.select_one(".price_sect strong")
+        if not name_el:
+            continue
+        price = parse_price(price_el.get_text(strip=True) if price_el else "")
+        if not price:
+            continue
+        results.append({
+            "source": "danawa",
+            "condition": "new",
+            "title": name_el.get_text(strip=True),
+            "price": price,
+            "url": name_el.get("href", ""),
+        })
 
     return results
 
 
-async def search_bunjang(query: str) -> list[dict]:
+async def search_bunjang(query: str, session: aiohttp.ClientSession) -> list[dict]:
     """번개장터 API 검색 (중고)"""
     results = []
     url = f"https://api.bunjang.co.kr/api/1/find_v2.json?q={quote(query)}&order=score&n=30&stat=ok"
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    for item in data.get("list", [])[:30]:
-                        price = int(item.get("price", 0) or 0)
-                        name = item.get("name", "")
-                        pid = item.get("pid", "")
-                        if name and price:
-                            results.append({
-                                "source": "bunjang",
-                                "condition": "used",
-                                "title": name,
-                                "price": price,
-                                "url": f"https://m.bunjang.co.kr/products/{pid}",
-                            })
-        except Exception:
-            pass
+    try:
+        async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for item in data.get("list", [])[:30]:
+                    price = int(item.get("price", 0) or 0)
+                    name = item.get("name", "")
+                    pid = item.get("pid", "")
+                    if name and price:
+                        results.append({
+                            "source": "bunjang",
+                            "condition": "used",
+                            "title": name,
+                            "price": price,
+                            "url": f"https://m.bunjang.co.kr/products/{pid}",
+                        })
+    except Exception:
+        pass
 
     return results
 
 
-async def search_junggo(query: str) -> list[dict]:
+async def search_junggo(query: str, session: aiohttp.ClientSession) -> list[dict]:
     """중고나라 검색 API (중고)"""
     results = []
     url = "https://search-api.joongna.com/v3/search/all"
     headers = {**HEADERS, "Content-Type": "application/json", "Origin": "https://web.joongna.com"}
     body = json.dumps({"searchWord": query, "page": 0, "size": 30})
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(url, data=body, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    for item in (data.get("data", {}).get("items") or [])[:30]:
-                        price = int(item.get("price", 0) or 0)
-                        title = item.get("title", "")
-                        seq = item.get("seq", "")
-                        if title and price:
-                            results.append({
-                                "source": "joongna",
-                                "condition": "used",
-                                "title": title,
-                                "price": price,
-                                "url": f"https://web.joongna.com/product/{seq}",
-                            })
-        except Exception:
-            pass
+    try:
+        async with session.post(url, data=body, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for item in (data.get("data", {}).get("items") or [])[:30]:
+                    price = int(item.get("price", 0) or 0)
+                    title = item.get("title", "")
+                    seq = item.get("seq", "")
+                    if title and price:
+                        results.append({
+                            "source": "joongna",
+                            "condition": "used",
+                            "title": title,
+                            "price": price,
+                            "url": f"https://web.joongna.com/product/{seq}",
+                        })
+    except Exception:
+        pass
 
     return results
 
@@ -189,15 +184,16 @@ def parse_price(text: str) -> int:
 
 
 async def get_part_prices(brand: str, model: str, category: str) -> list[dict]:
-    """부품 시세 조회 — 3개 소스 병렬 + 단품 필터 적용"""
+    """부품 시세 조회 — 3개 소스 병렬 + 단품 필터 적용 (세션 공유로 연결 재사용)"""
     query = f"{brand} {model}".strip()
 
-    tasks = [
-        search_danawa_direct(query),
-        search_bunjang(query),
-        search_junggo(query),
-    ]
-    results_list = await asyncio.gather(*tasks, return_exceptions=True)
+    async with aiohttp.ClientSession() as session:
+        results_list = await asyncio.gather(
+            search_danawa_direct(query, session),
+            search_bunjang(query, session),
+            search_junggo(query, session),
+            return_exceptions=True,
+        )
 
     all_results = []
     for r in results_list:

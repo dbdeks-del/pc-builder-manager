@@ -14,7 +14,7 @@ from datetime import datetime
 
 from database import init_db, SessionLocal
 from models import Part, PCBuild, LedgerEntry
-from parts_db import KO2EN
+from parts_db import KO2EN, _split_brand
 
 
 def parse_date(s: str | None) -> datetime:
@@ -40,8 +40,7 @@ def map_category(ko_cat: str, name: str, spec: str) -> str:
 
 def to_part(old: dict, pc_id: int | None = None) -> Part:
     name = (old.get("name") or "").strip()
-    tokens = name.split(None, 1)
-    brand, model = (tokens[0], tokens[1]) if len(tokens) == 2 else ("", name)
+    brand, model = _split_brand(name)
     spec = old.get("spec") or ""
     return Part(
         category=map_category(old.get("cat", "기타"), name, spec),

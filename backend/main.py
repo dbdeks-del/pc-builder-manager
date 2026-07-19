@@ -100,6 +100,20 @@ def parts_data_of(parts: list[Part]) -> list[dict]:
     return [{"category": p.category, "brand": p.brand or "", "model": p.model or "", "specs": p.specs or {}} for p in parts]
 
 
+def get_or_404(db: Session, model, obj_id: int, not_found: str):
+    obj = db.query(model).filter(model.id == obj_id).first()
+    if not obj:
+        raise HTTPException(404, not_found)
+    return obj
+
+
+def _owned_or_pc_parts(db: Session, pc_id: Optional[int]) -> list[Part]:
+    """pc_id가 있으면 그 PC에 장착된 부품, 없으면 보유 중인 부품 전체"""
+    if pc_id is not None:
+        return db.query(Part).filter(Part.pc_id == pc_id).all()
+    return db.query(Part).filter(Part.owned == True).all()
+
+
 def pc_dict(pc: PCBuild, db: Session, purpose: str = "gaming") -> dict:
     parts = db.query(Part).filter(Part.pc_id == pc.id).all()
     cost = pc.purchase_price if pc.whole and pc.purchase_price else sum(p.purchase_price or 0 for p in parts)
@@ -137,9 +151,7 @@ def create_part(data: PartCreate, db: Session = Depends(get_db)):
 
 @app.put("/parts/{part_id}")
 def update_part(part_id: int, data: PartUpdate, db: Session = Depends(get_db)):
-    part = db.query(Part).filter(Part.id == part_id).first()
-    if not part:
-        raise HTTPException(404, "Part not found")
+    part = get_or_404(db, Part, part_id, "Part not found")
     for k, v in data.model_dump(exclude_none=True).items():
         setattr(part, k, v)
     db.commit()
@@ -149,9 +161,7 @@ def update_part(part_id: int, data: PartUpdate, db: Session = Depends(get_db)):
 
 @app.delete("/parts/{part_id}")
 def delete_part(part_id: int, db: Session = Depends(get_db)):
-    part = db.query(Part).filter(Part.id == part_id).first()
-    if not part:
-        raise HTTPException(404, "Part not found")
+    part = get_or_404(db, Part, part_id, "Part not found")
     db.delete(part)
     db.commit()
     return {"ok": True}
@@ -160,9 +170,7 @@ def delete_part(part_id: int, db: Session = Depends(get_db)):
 @app.post("/parts/{part_id}/sell")
 def sell_part(part_id: int, data: SellRequest, db: Session = Depends(get_db)):
     """부품 개별 판매: 장부에 기록하고 인벤토리에서 제거"""
-    part = db.query(Part).filter(Part.id == part_id).first()
-    if not part:
-        raise HTTPException(404, "Part not found")
+    part = get_or_404(db, Part, part_id, "Part not found")
     if part.pc_id is not None:
         raise HTTPException(400, "PC에 장착된 부품입니다. 먼저 탈착하세요.")
     name = f"{part.brand or ''} {part.model or ''}".strip()
@@ -194,17 +202,13 @@ def create_pc(data: PCCreate, db: Session = Depends(get_db)):
 
 @app.get("/pcs/{pc_id}")
 def get_pc(pc_id: int, purpose: str = "gaming", db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     return pc_dict(pc, db, purpose)
 
 
 @app.put("/pcs/{pc_id}")
 def update_pc(pc_id: int, data: PCUpdate, db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     for k, v in data.model_dump(exclude_none=True).items():
         setattr(pc, k, v)
     db.commit()
@@ -237,9 +241,7 @@ def detach_part(pc_id: int, part_id: int, db: Session = Depends(get_db)):
 
 @app.post("/pcs/{pc_id}/complete")
 def complete_pc(pc_id: int, db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     pc.status = "done"
     pc.completed_at = datetime.utcnow()
     db.commit()
@@ -248,9 +250,7 @@ def complete_pc(pc_id: int, db: Session = Depends(get_db)):
 
 @app.post("/pcs/{pc_id}/reopen")
 def reopen_pc(pc_id: int, db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     pc.status = "building"
     pc.completed_at = None
     db.commit()
@@ -259,9 +259,7 @@ def reopen_pc(pc_id: int, db: Session = Depends(get_db)):
 
 @app.post("/pcs/{pc_id}/sell")
 def sell_pc(pc_id: int, data: SellRequest, db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     pc.status = "sold"
     pc.sold_price = data.price
     pc.sold_at = datetime.utcnow()
@@ -273,9 +271,7 @@ def sell_pc(pc_id: int, data: SellRequest, db: Session = Depends(get_db)):
 @app.post("/pcs/{pc_id}/dismantle")
 def dismantle_pc(pc_id: int, db: Session = Depends(get_db)):
     """해체: 부품은 창고로 복귀, PC 카드는 삭제 (장부 기록은 유지)"""
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     for part in db.query(Part).filter(Part.pc_id == pc_id).all():
         part.pc_id = None
     db.delete(pc)
@@ -286,9 +282,7 @@ def dismantle_pc(pc_id: int, db: Session = Depends(get_db)):
 @app.delete("/pcs/{pc_id}")
 def delete_pc(pc_id: int, db: Session = Depends(get_db)):
     """삭제: 부품까지 함께 삭제"""
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     db.query(Part).filter(Part.pc_id == pc_id).delete()
     db.delete(pc)
     db.commit()
@@ -314,9 +308,7 @@ def whole_intake(data: WholeIntake, db: Session = Depends(get_db)):
 
 @app.get("/pcs/{pc_id}/score")
 def pc_score(pc_id: int, purpose: str = "gaming", db: Session = Depends(get_db)):
-    pc = db.query(PCBuild).filter(PCBuild.id == pc_id).first()
-    if not pc:
-        raise HTTPException(404, "PC not found")
+    pc = get_or_404(db, PCBuild, pc_id, "PC not found")
     parts = db.query(Part).filter(Part.pc_id == pc_id).all()
     cost = pc.purchase_price if pc.whole and pc.purchase_price else sum(p.purchase_price or 0 for p in parts)
     return score_build(parts_data_of(parts), purpose, cost or None)
@@ -350,9 +342,7 @@ def create_ledger(data: LedgerCreate, db: Session = Depends(get_db)):
 
 @app.delete("/ledger/{entry_id}")
 def delete_ledger(entry_id: int, db: Session = Depends(get_db)):
-    entry = db.query(LedgerEntry).filter(LedgerEntry.id == entry_id).first()
-    if not entry:
-        raise HTTPException(404, "Entry not found")
+    entry = get_or_404(db, LedgerEntry, entry_id, "Entry not found")
     db.delete(entry)
     db.commit()
     return {"ok": True}
@@ -362,18 +352,12 @@ def delete_ledger(entry_id: int, db: Session = Depends(get_db)):
 
 @app.get("/analysis/compatibility")
 def compatibility(pc_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(Part).filter(Part.owned == True)
-    if pc_id is not None:
-        q = db.query(Part).filter(Part.pc_id == pc_id)
-    return check_compatibility(parts_data_of(q.all()))
+    return check_compatibility(parts_data_of(_owned_or_pc_parts(db, pc_id)))
 
 
 @app.get("/analysis/bottleneck")
 def bottleneck(pc_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(Part).filter(Part.owned == True)
-    if pc_id is not None:
-        q = db.query(Part).filter(Part.pc_id == pc_id)
-    return analyze_bottleneck(parts_data_of(q.all()))
+    return analyze_bottleneck(parts_data_of(_owned_or_pc_parts(db, pc_id)))
 
 
 @app.get("/analysis/recommend")
@@ -424,10 +408,7 @@ async def get_prices_cached(db: Session, part: Part, refresh: bool = False) -> t
 
 @app.get("/prices/pc/total")
 async def get_total_pc_value(pc_id: Optional[int] = None, refresh: bool = False, db: Session = Depends(get_db)):
-    q = db.query(Part).filter(Part.owned == True)
-    if pc_id is not None:
-        q = db.query(Part).filter(Part.pc_id == pc_id)
-    parts = q.all()
+    parts = _owned_or_pc_parts(db, pc_id)
 
     # 부품별 시세를 병렬 조회 (캐시 히트는 즉시 반환됨)
     results = await asyncio.gather(*[get_prices_cached(db, p, refresh) for p in parts])
@@ -447,12 +428,14 @@ async def get_total_pc_value(pc_id: Optional[int] = None, refresh: bool = False,
 async def search_deals(query: str, db: Session = Depends(get_db)):
     """가성비 매물 검색 (완본체 매물도 포함, 0원 매물만 제외)"""
     from crawler import search_bunjang, search_junggo, search_danawa_direct
-    tasks = [
-        search_danawa_direct(query),
-        search_bunjang(query),
-        search_junggo(query),
-    ]
-    results_list = await asyncio.gather(*tasks, return_exceptions=True)
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        results_list = await asyncio.gather(
+            search_danawa_direct(query, session),
+            search_bunjang(query, session),
+            search_junggo(query, session),
+            return_exceptions=True,
+        )
     all_results = []
     for r in results_list:
         if isinstance(r, list):
@@ -464,9 +447,7 @@ async def search_deals(query: str, db: Session = Depends(get_db)):
 
 @app.get("/prices/{part_id}")
 async def get_price(part_id: int, refresh: bool = False, db: Session = Depends(get_db)):
-    part = db.query(Part).filter(Part.id == part_id).first()
-    if not part:
-        raise HTTPException(404, "Part not found")
+    part = get_or_404(db, Part, part_id, "Part not found")
     prices, cached = await get_prices_cached(db, part, refresh)
     return {"part_id": part_id, "prices": prices, "cached": cached}
 

@@ -15,13 +15,11 @@ import re
 import sys
 import urllib.request
 
+from compatibility import _normalize as norm
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(BASE, "parts_db.json")
 DOCYX = "https://raw.githubusercontent.com/docyx/pc-part-dataset/main/data/json/"
-
-
-def norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9가-힣]", "", s.lower())
 
 
 # ── 1. docyx 변환 (원본 build_db.py 로직) ──────────────────────

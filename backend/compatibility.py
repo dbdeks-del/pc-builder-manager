@@ -382,28 +382,38 @@ def _normalize(s: str) -> str:
     return re.sub(r"[^a-z0-9가-힣]", "", s)
 
 
-def _find_normalized(name: str, mapping: dict):
-    name_norm = _normalize(name)
-    best_key = None
-    best_len = 0
-    for key in mapping:
-        key_norm = _normalize(key)
+def longest_match(name_norm: str, normalized_map: dict):
+    """정규화된 이름에서, 정규화된 키들 중 가장 긴 부분일치 키의 값을 반환.
+    호출부는 각자의 방식으로 정규화를 마친 맵을 넘긴다 (scoring.py도 이 함수를 재사용)."""
+    best_val, best_len = None, 0
+    for key_norm, val in normalized_map.items():
         if key_norm in name_norm and len(key_norm) > best_len:
-            best_key = key
-            best_len = len(key_norm)
-    return best_key
+            best_val, best_len = val, len(key_norm)
+    return best_val
+
+
+# 정적 맵(소켓/점수/TDP 테이블)의 정규화 결과 캐시 — 맵은 모듈 로드 시 한 번만 만들어지는
+# 전역 상수이므로 id() 기반 캐시로 충분하고, 매 조회마다 모든 키를 재정규화하지 않아도 된다.
+_norm_map_cache: dict[int, dict[str, object]] = {}
+
+
+def _normalized_map(mapping: dict) -> dict:
+    cached = _norm_map_cache.get(id(mapping))
+    if cached is None:
+        cached = {_normalize(k): v for k, v in mapping.items()}
+        _norm_map_cache[id(mapping)] = cached
+    return cached
 
 
 def find_score(name: str, score_map: dict) -> float:
     """이름으로 점수를 찾음 (가장 긴 키 우선으로 매칭)"""
-    key = _find_normalized(name, score_map)
-    return score_map[key] if key else 0
+    val = longest_match(_normalize(name), _normalized_map(score_map))
+    return val if val is not None else 0
 
 
 def find_socket(name: str, socket_map: dict) -> str | None:
     """이름으로 소켓/슬롯 정보를 찾음 (가장 긴 키 우선)"""
-    key = _find_normalized(name, socket_map)
-    return socket_map[key] if key else None
+    return longest_match(_normalize(name), _normalized_map(socket_map))
 
 
 def check_compatibility(parts: list[dict]) -> dict:

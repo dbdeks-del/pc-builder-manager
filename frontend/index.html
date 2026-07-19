@@ -383,6 +383,13 @@ async function api(path, opt = {}) {
   return r.json();
 }
 const partName = p => `${p.brand || ""} ${p.model || ""}`.trim();
+// 호환성 이슈/경고/병목 — 조립대 카드와 검사실이 공통으로 쓰는 부분
+const issuesHTML = s => `
+  ${s.compat_issues.map(i => `<span class="issue">⛔ ${esc(i.message)}</span>`).join("")}
+  ${s.compat_warnings.map(w => `<span class="warn">⚠️ ${esc(w.message)}</span>`).join("")}
+  ${s.bottleneck ? `<span class="warn">🚧 ${esc(s.bottleneck)}</span>` : ""}
+`;
+const catOptions = () => Object.keys(CATS).map(c => `<option value="${c}">${CATS[c].icon} ${CATS[c].label}</option>`).join("");
 
 // ── 데이터 로드 ────────────────────────
 async function reload() {
@@ -413,7 +420,7 @@ function renderHUD() {
 // ── 📦 창고 ───────────────────────────
 function renderWarehouse() {
   const cats = Object.keys(CATS);
-  $("addCat").innerHTML = cats.map(c => `<option value="${c}">${CATS[c].icon} ${CATS[c].label}</option>`).join("");
+  $("addCat").innerHTML = catOptions();
   const wh = S.parts.filter(p => p.pc_id == null);
   const counts = { all: wh.length, wish: wh.filter(p => !p.owned).length };
   wh.forEach(p => counts[p.category] = (counts[p.category] || 0) + 1);
@@ -608,9 +615,7 @@ function renderRig(pc) {
       <b>${s.overall}</b>
     </div>
     <div class="rig-issues">
-      ${s.compat_issues.map(i => `<span class="issue">⛔ ${esc(i.message)}</span>`).join("")}
-      ${s.compat_warnings.map(w => `<span class="warn">⚠️ ${esc(w.message)}</span>`).join("")}
-      ${s.bottleneck ? `<span class="warn">🚧 ${esc(s.bottleneck)}</span>` : ""}
+      ${issuesHTML(s)}
       ${s.missing_slots.length ? `<span style="color:var(--dim)">🧩 부족한 슬롯: ${s.missing_slots.map(m => CATS[m]?.label || "저장장치").join(", ")}</span>` : ""}
     </div>
     <div class="rig-foot">
@@ -667,7 +672,7 @@ function toggleWhole() { const f = $("wholeForm"); f.style.display = f.style.dis
 function addWholeRow() {
   const div = document.createElement("div");
   div.className = "row"; div.style.marginBottom = "6px";
-  div.innerHTML = `<select style="width:110px">${Object.keys(CATS).map(c => `<option value="${c}">${CATS[c].icon} ${CATS[c].label}</option>`).join("")}</select>
+  div.innerHTML = `<select style="width:110px">${catOptions()}</select>
     <input placeholder="부품 이름" style="flex:1"><button class="btn red sm" onclick="this.parentNode.remove()">✕</button>`;
   $("wholeParts").appendChild(div);
 }
@@ -728,9 +733,7 @@ async function renderLab() {
         <div class="meter"><div class="m-head"><b>${v}</b><span>${s.purpose_scores[k]}</span></div>
         <div class="m-bar"><i style="width:${s.purpose_scores[k]}%; background:var(--bg3); background:linear-gradient(90deg,var(--blue),var(--accent))"></i></div></div>`).join("")}
       <div class="rig-issues mt">
-        ${s.compat_issues.map(i => `<span class="issue">⛔ ${esc(i.message)}</span>`).join("")}
-        ${s.compat_warnings.map(w => `<span class="warn">⚠️ ${esc(w.message)}</span>`).join("")}
-        ${s.bottleneck ? `<span class="warn">🚧 ${esc(s.bottleneck)}</span>` : ""}
+        ${issuesHTML(s)}
         ${pc ? `<span style="color:var(--dim)">💰 투입 비용: ${fmt(pc.cost)}</span>` : ""}
       </div>
       ${(s.upgrades || []).length ? `<h2 class="mt">🔧 업그레이드 추천</h2>
@@ -754,7 +757,7 @@ async function fetchMarket(refresh = false) {
   try {
     const res = await api(`/prices/pc/total?pc_id=${id}${refresh ? "&refresh=true" : ""}`);
     const rows = (res.parts || []).map(p => ({
-      name: `${p.part.brand || ""} ${p.part.model || ""}`.trim(),
+      name: partName(p.part),
       est: p.estimate, n: p.n_used, min: p.min_price, max: p.max_price,
       newPrice: p.new_price, cached: p.cached,
     }));

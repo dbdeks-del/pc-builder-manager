@@ -21,13 +21,6 @@ KO2EN = {
     "기타": "etc",
 }
 
-EN2KO = {
-    "cpu": "CPU", "gpu": "그래픽카드", "motherboard": "메인보드", "ram": "RAM",
-    "ssd": "SSD", "hdd": "HDD", "psu": "파워", "case": "케이스",
-    "cooler": "쿨러", "etc": "기타",
-}
-
-
 def _parse_specs(category: str, name: str, s: str) -> dict:
     """스펙 요약 문자열을 카테고리별 구조화 specs로 변환"""
     specs = {"summary": s}
@@ -145,7 +138,3 @@ def search_parts(query: str = "", category: str = "") -> list[dict]:
         results = [p for p in results if matches(p)]
 
     return results[:30]
-
-
-def get_categories() -> list[str]:
-    return list(EN2KO.keys())

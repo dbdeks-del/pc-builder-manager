@@ -8,8 +8,9 @@ import bisect
 import json
 import os
 import re
+from functools import lru_cache
 
-from compatibility import check_compatibility, _normalize as normalize
+from compatibility import check_compatibility, _normalize as normalize, longest_match
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,13 +55,20 @@ REQUIRED_SLOTS = ["cpu", "motherboard", "ram", "storage", "psu", "case"]
 
 
 def _find_bench(name: str, keys: dict) -> float:
-    """이름에 포함된 가장 긴 key의 점수 반환 (없으면 0)"""
-    name_norm = normalize(name)
-    best_key, best_len = None, 0
-    for key in keys:
-        if key in name_norm and len(key) > best_len:
-            best_key, best_len = key, len(key)
-    return keys[best_key] if best_key else 0
+    """이름에 포함된 가장 긴 key의 점수 반환 (없으면 0). 매칭 로직 자체는
+    compatibility.longest_match를 재사용 — 여기 keys는 이미 정규화돼 있다는 점만 다르다."""
+    val = longest_match(normalize(name), keys)
+    return val if val is not None else 0
+
+
+@lru_cache(maxsize=4096)
+def _cpu_bench(name: str) -> float:
+    return _find_bench(name, _CPU_KEYS)
+
+
+@lru_cache(maxsize=4096)
+def _gpu_bench(name: str) -> float:
+    return _find_bench(name, _GPU_KEYS)
 
 
 def _percentile(score: float, sorted_scores: list) -> float:
@@ -86,10 +94,10 @@ def part_performance(category: str, brand: str, model: str, specs: dict | None =
     """부품 하나의 벤치마크 점수/백분위/등급"""
     name = f"{brand} {model}".strip()
     if category == "cpu":
-        score = _find_bench(name, _CPU_KEYS)
+        score = _cpu_bench(name)
         pct = _percentile(score, _CPU_SORTED)
     elif category == "gpu":
-        score = _find_bench(name, _GPU_KEYS)
+        score = _gpu_bench(name)
         pct = _percentile(score, _GPU_SORTED)
     elif category == "psu":
         # 80+ 인증 등급 기반 (specs 또는 이름에서)
@@ -134,33 +142,26 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
     cpu_bench, gpu_bench = 0, 0
     if "cpu" in cats:
         c = cats["cpu"][0]
-        cpu_bench = _find_bench(f"{c['brand']} {c['model']}", _CPU_KEYS)
+        cpu_bench = _cpu_bench(f"{c['brand']} {c['model']}".strip())
         cpu_pct = _percentile(cpu_bench, _CPU_SORTED)
     if "gpu" in cats:
         g = cats["gpu"][0]
-        gpu_bench = _find_bench(f"{g['brand']} {g['model']}", _GPU_KEYS)
+        gpu_bench = _gpu_bench(f"{g['brand']} {g['model']}".strip())
         gpu_pct = _percentile(gpu_bench, _GPU_SORTED)
 
-    w = PURPOSE_WEIGHTS.get(purpose, PURPOSE_WEIGHTS["gaming"])
-    if gpu_pct > 0 and cpu_pct > 0:
-        performance = cpu_pct * w["cpu"] + gpu_pct * w["gpu"]
-    elif cpu_pct > 0:
-        performance = cpu_pct * 0.8  # 내장그래픽 가정 페널티
-    elif gpu_pct > 0:
-        performance = gpu_pct * 0.5
-    else:
-        performance = 0
+    def performance_for(weights: dict) -> float:
+        if gpu_pct > 0 and cpu_pct > 0:
+            return cpu_pct * weights["cpu"] + gpu_pct * weights["gpu"]
+        if cpu_pct > 0:
+            return cpu_pct * 0.8  # 내장그래픽 가정 페널티
+        if gpu_pct > 0:
+            return gpu_pct * 0.5
+        return 0
+
+    performance = performance_for(PURPOSE_WEIGHTS.get(purpose, PURPOSE_WEIGHTS["gaming"]))
 
     # 목적별 성능 (검사실 레이더용)
-    purpose_scores = {}
-    for pk, pw in PURPOSE_WEIGHTS.items():
-        if gpu_pct > 0 and cpu_pct > 0:
-            ps = cpu_pct * pw["cpu"] + gpu_pct * pw["gpu"]
-        elif cpu_pct > 0:
-            ps = cpu_pct * 0.8
-        else:
-            ps = gpu_pct * 0.5
-        purpose_scores[pk] = round(ps)
+    purpose_scores = {pk: round(performance_for(pw)) for pk, pw in PURPOSE_WEIGHTS.items()}
 
     # ── 밸런스 (CPU-GPU 백분위 격차) ──
     bottleneck = None
@@ -192,11 +193,12 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
         value = round(min(100, performance / max(cost_man, 1) * 60))
 
     # ── 종합 ──
-    if value is not None:
-        overall = performance * 0.30 + balance * 0.15 + compat_score * 0.25 + completeness * 0.15 + value * 0.15
-    else:
-        overall = performance * 0.35 + balance * 0.15 + compat_score * 0.25 + completeness * 0.25
-    overall = round(overall)
+    def overall_of(perf: float, bal: float) -> float:
+        if value is not None:
+            return round(perf * 0.30 + bal * 0.15 + compat_score * 0.25 + completeness * 0.15 + value * 0.15)
+        return round(perf * 0.35 + bal * 0.15 + compat_score * 0.25 + completeness * 0.25)
+
+    overall = overall_of(performance, balance)
 
     # ── 업그레이드 추천 (뭘 바꾸면 몇 점 오르는지) ──
     upgrades = []
@@ -204,11 +206,7 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
         stronger = max(cpu_pct, gpu_pct)
         weaker_name = "CPU" if cpu_pct < gpu_pct else "GPU"
         new_perf = stronger  # 약한 쪽을 강한 쪽 수준으로 맞췄다고 가정
-        if value is not None:
-            new_overall = round(new_perf * 0.30 + 100 * 0.15 + compat_score * 0.25 + completeness * 0.15 + value * 0.15)
-        else:
-            new_overall = round(new_perf * 0.35 + 100 * 0.15 + compat_score * 0.25 + completeness * 0.25)
-        gain = new_overall - overall
+        gain = overall_of(new_perf, 100) - overall
         if gain > 0:
             upgrades.append({
                 "message": f"{weaker_name}를 상대 백분위 {stronger:.0f} 수준으로 업그레이드하면 밸런스가 맞습니다.",
