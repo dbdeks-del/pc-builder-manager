@@ -7,13 +7,14 @@ import asyncio
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from database import init_db, get_db, insert, update, delete, get_one, row_dict, now
 from compatibility import check_compatibility, analyze_bottleneck, recommend_build
 from crawler import get_part_prices, calculate_pc_value
 from parts_db import search_parts
-from paths import frontend_path
+from paths import frontend_path, pwa_dir
 from scoring import score_build, part_performance
 
 app = FastAPI(title="PC Builder Manager", version="2.0.0")
@@ -24,6 +25,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 서버 없이 휴대폰 단독으로 도는 오프라인 PWA — 휴대폰에서 최초 1회 /pwa 로 접속해
+# "홈 화면에 추가"하면 그 뒤로는 이 서버가 꺼져 있어도 동작한다.
+app.mount("/pwa", StaticFiles(directory=pwa_dir(), html=True), name="pwa")
 
 
 @app.on_event("startup")

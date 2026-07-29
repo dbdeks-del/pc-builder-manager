@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PC 플리핑 매니저</title>
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="manifest.json">
+<title>PC 플리핑 매니저 (오프라인)</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #1c2330; --line: #2b3648;
@@ -23,6 +25,7 @@ input:focus, select:focus { border-color: var(--accent); }
 header { position: sticky; top: 0; z-index: 50; background: linear-gradient(180deg, #131a26, #10151f); border-bottom: 1px solid var(--line); padding: 10px 18px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 header h1 { font-size: 17px; letter-spacing: .5px; white-space: nowrap; }
 header h1 span { color: var(--accent); }
+.offline-badge { font-size: 10.5px; color: var(--green); border: 1px solid #1f4d2b; background: rgba(63,185,80,.12); padding: 3px 9px; border-radius: 10px; white-space: nowrap; }
 .hud { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .hud-chip { background: var(--bg3); border: 1px solid var(--line); border-radius: 20px; padding: 5px 12px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
 .hud-chip b { font-size: 13px; }
@@ -185,7 +188,10 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 
 <header>
   <h1>🖥️ PC <span>플리핑</span> 매니저</h1>
+  <span class="offline-badge">📴 오프라인 · 이 기기에만 저장됨</span>
   <div class="hud" id="hud"></div>
+  <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImportFile(event)">
+  <button class="btn sm" onclick="$('importFile').click()" title="데스크톱 버전의 백업(json) 파일을 이 기기로 가져옵니다">📥 가져오기</button>
   <button class="btn sm" onclick="downloadBackup()" title="전체 데이터를 JSON 파일로 저장">💾 백업</button>
 </header>
 
@@ -271,20 +277,12 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 <!-- ══════════ 💰 판매장 ══════════ -->
 <div class="tab" id="tab-market">
   <div class="card">
-    <h2>판매할 PC 선택 → 실시간 중고 시세(다나와·번개장터·중고나라)로 권장가 계산</h2>
+    <h2>판매할 PC 선택 — 오프라인 버전이라 실시간 시세 조회는 지원하지 않습니다. 판매가를 직접 입력하세요.</h2>
     <div class="row">
       <select id="mktPC" style="min-width:220px"></select>
-      <button class="btn primary" onclick="fetchMarket()">🔎 시세 조회</button>
+      <button class="btn primary" onclick="fetchMarket()">🔎 판매 등록</button>
     </div>
     <div id="mktResult" class="mt"></div>
-  </div>
-  <div class="card mt">
-    <h2>🔍 매물 검색 (아무 부품이나 검색해서 싸게 사기)</h2>
-    <div class="row">
-      <input id="dealQuery" placeholder="예: rtx 3060" style="flex:1; max-width:320px">
-      <button class="btn" onclick="searchDeals()">검색</button>
-    </div>
-    <div id="dealResult" class="mt"></div>
   </div>
 </div>
 
@@ -312,9 +310,8 @@ td { padding: 6px; border-bottom: 1px solid var(--line); }
 <div id="toast"></div>
 <div id="modalWrap"><div class="modal-card" id="modalCard"></div></div>
 
+<script src="engine.js"></script>
 <script>
-const API = "";  // 백엔드가 프론트를 같은 오리진에서 직접 서빙하므로 상대경로면 충분
-
 const CATS = {
   cpu:        { label: "CPU",      icon: "🧠", color: "var(--cpu)" },
   gpu:        { label: "그래픽카드", icon: "🎮", color: "var(--gpu)" },
@@ -398,11 +395,21 @@ async function downloadBackup() {
     toast("💾 백업 파일 다운로드 완료");
   } catch (e) { toast("백업 실패: " + e.message); }
 }
+async function handleImportFile(e) {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!await uiConfirm("데이터 가져오기", "이 기기에 저장된 기존 데이터를 모두 지우고 백업 파일 내용으로 덮어씁니다. 계속할까요?")) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    importBackup(data);
+    toast("📥 가져오기 완료!");
+    reload();
+  } catch (err) { toast("가져오기 실패: " + err.message); }
+}
 async function api(path, opt = {}) {
-  if (opt.json) { opt.body = JSON.stringify(opt.json); opt.headers = { "Content-Type": "application/json" }; delete opt.json; }
-  const r = await fetch(API + path, opt);
-  if (!r.ok) { let d = ""; try { d = (await r.json()).detail; } catch {} throw new Error(d || r.status); }
-  return r.json();
+  return localApi(path, opt);
 }
 const partName = p => `${p.brand || ""} ${p.model || ""}`.trim();
 // 호환성 이슈/경고/병목 — 조립대 카드와 검사실이 공통으로 쓰는 부분
@@ -422,7 +429,7 @@ async function reload() {
     renderAll();
   } catch (e) {
     document.querySelector("main").insertAdjacentHTML("afterbegin",
-      `<div class="card" style="border-color:var(--red); margin-bottom:12px">⚠️ 서버(${API})에 연결할 수 없습니다. start.bat 으로 백엔드를 먼저 실행하세요. (${esc(e.message)})</div>`);
+      `<div class="card" style="border-color:var(--red); margin-bottom:12px">⚠️ 로컬 데이터 엔진을 불러오지 못했습니다. 페이지를 새로고침해보세요. (${esc(e.message)})</div>`);
   }
 }
 function renderAll() { renderHUD(); renderWarehouse(); renderWorkshop(); renderLabSelect(); renderMarketSelect(); renderLedger(); }
@@ -811,45 +818,27 @@ async function renderLab() {
     </div>`;
 }
 
-// ── 💰 판매장 ─────────────────────────
+// ── 💰 판매장 (오프라인 — 시세 조회 없이 직접 입력) ──────
 function renderMarketSelect() {
   $("mktPC").innerHTML = `<option value="">— 판매할 PC —</option>` +
     S.pcs.filter(pc => pc.status === "done").map(pc => `<option value="${pc.id}">✅ ${esc(pc.name)} (${pc.score.grade} · ${pc.score.overall}점)</option>`).join("");
 }
 function gotoSell(pcId) { showTab("market"); $("mktPC").value = pcId; fetchMarket(); }
-async function fetchMarket(refresh = false) {
+async function fetchMarket() {
   const id = $("mktPC").value;
   if (!id) return toast("PC를 선택하세요");
   const pc = S.pcs.find(p => p.id == id);
-  $("mktResult").innerHTML = `<div class="empty">⏳ 시세 ${refresh ? "재조회" : "조회"} 중... (하루 안에 조회한 부품은 캐시로 바로 나와요)</div>`;
-  try {
-    const res = await api(`/prices/pc/total?pc_id=${id}${refresh ? "&refresh=true" : ""}`);
-    const rows = (res.parts || []).map(p => ({
-      name: partName(p.part),
-      est: p.estimate, n: p.n_used, min: p.min_price, max: p.max_price,
-      newPrice: p.new_price, cached: p.cached,
-    }));
-    const total = res.total_estimate || 0;
-    const suggested = Math.round(total / 1000) * 1000;
-    const cost = pc?.cost || 0;
-    const anyCached = rows.some(r => r.cached);
-    $("mktResult").innerHTML = `
-      ${rows.map(r => `<div class="price-row"><span>${esc(r.name)}${r.cached ? ' <small style="color:var(--dim)">🕐캐시</small>' : ""}</span>
-        <span>${r.est ? `<b>${fmt(r.est)}</b> <small style="color:var(--dim)">중고 ${r.n}건 중앙값 (${fmt(r.min)}~${fmt(r.max)})</small>` : '<small style="color:var(--dim)">중고 매물 없음</small>'}${r.newPrice ? ` <small style="color:var(--yellow)">신품 ${fmt(r.newPrice)}</small>` : ""}</span></div>`).join("")}
-      <div class="row mt" style="justify-content:space-between">
-        <div>중고 시세 합계 <b>${fmt(total)}</b> · 투입 비용 ${fmt(cost)}</div>
-        ${anyCached ? `<button class="btn sm" onclick="fetchMarket(true)">🔄 최신 시세로 재조회</button>` : ""}
-      </div>
-      <div class="row mt">
-        <input id="sellPrice" value="${suggested || ""}" placeholder="판매가" style="width:140px" oninput="updateMargin(${cost})">
-        <button class="btn green" onclick="confirmSell(${id})">💰 판매 확정</button>
-        <div class="margin-box" id="marginBox"></div>
-      </div>`;
-    updateMargin(cost);
-  } catch (e) {
-    $("mktResult").innerHTML = `<div class="empty">시세 조회 실패: ${esc(e.message)} — 판매가를 직접 입력해도 됩니다.
-      <div class="row mt" style="justify-content:center"><input id="sellPrice" placeholder="판매가 (예: 45만)" style="width:140px"><button class="btn green" onclick="confirmSell(${id})">💰 판매 확정</button></div></div>`;
-  }
+  const cost = pc?.cost || 0;
+  $("mktResult").innerHTML = `
+    <div class="row mt">
+      <div>투입 비용 <b>${fmt(cost)}</b></div>
+    </div>
+    <div class="row mt">
+      <input id="sellPrice" placeholder="판매가 (예: 45만)" style="width:140px" oninput="updateMargin(${cost})">
+      <button class="btn green" onclick="confirmSell(${id})">💰 판매 확정</button>
+      <div class="margin-box" id="marginBox"></div>
+    </div>`;
+  updateMargin(cost);
 }
 function updateMargin(cost) {
   const price = parsePrice($("sellPrice").value);
@@ -865,18 +854,6 @@ async function confirmSell(id) {
   await api(`/pcs/${id}/sell`, { method: "POST", json: { price } });
   toast("💸 판매 완료! 장부에 기록됐습니다");
   reload();
-}
-async function searchDeals() {
-  const q = $("dealQuery").value.trim();
-  if (!q) return;
-  $("dealResult").innerHTML = `<div class="empty">⏳ 매물 검색 중...</div>`;
-  try {
-    const res = await api(`/prices/search?query=${encodeURIComponent(q)}`);
-    const badge = r => r.condition === "new" ? `<small style="color:var(--yellow)">신품</small>` : `<small style="color:var(--green)">중고</small>`;
-    $("dealResult").innerHTML = res.length ? res.slice(0, 25).map(r => `
-      <div class="price-row"><span>${badge(r)} [${esc(r.source)}] ${r.url ? `<a href="${esc(r.url)}" target="_blank">${esc(r.title)}</a>` : esc(r.title)}</span><b>${fmt(r.price)}</b></div>`).join("")
-      : `<div class="empty">매물이 없습니다</div>`;
-  } catch (e) { $("dealResult").innerHTML = `<div class="empty">검색 실패: ${esc(e.message)}</div>`; }
 }
 
 // ── 📒 장부 ───────────────────────────
@@ -910,7 +887,7 @@ async function delLedger(id) { if (await uiConfirm("기록 삭제", "이 장부 
 
 // ── 탭 ────────────────────────────────
 // 탭 전환마다 히스토리에 기록해서, 뒤로가기를 누르면 앱이 바로 꺼지는 게 아니라
-// 이전 탭으로 돌아가게 한다 (모바일에서 특히 중요 — 안드로이드 뒤로가기가 곧 앱 종료였음).
+// 이전 탭으로 돌아가게 한다 (홈 화면에 설치한 PWA에서 안드로이드 뒤로가기 = 앱 종료였던 문제).
 function showTab(name, push = true) {
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + name));
@@ -918,6 +895,10 @@ function showTab(name, push = true) {
 }
 window.addEventListener("popstate", e => showTab(e.state?.tab || "warehouse", false));
 history.replaceState({ tab: "warehouse" }, "", "#warehouse");
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
 
 reload();
 </script>

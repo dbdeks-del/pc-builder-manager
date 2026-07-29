@@ -70,11 +70,26 @@ def _gpu_bench(name: str) -> float:
 
 
 def _percentile(score: float, sorted_scores: list) -> float:
-    """전체 벤치마크 DB에서의 백분위 (0~100)"""
+    """전체 벤치마크 DB에서의 백분위 (0~100) — '역대 몇등급 레어템인가' 표시용.
+    벤치 DB에 단종된 초저사양이 워낙 많아(중앙값이 최상위 카드의 2%도 안 됨),
+    이 값은 부품 카드의 희귀도 연출에만 쓰고 PC 등급 산정에는 쓰지 않는다
+    (아래 _relative_perf 참고 — 안 그러면 웬만한 부품이 다 상위권으로 잡혀 등급이 S로 쏠린다)."""
     if score <= 0 or not sorted_scores:
         return 0
     idx = bisect.bisect_left(sorted_scores, score)
     return round(idx / len(sorted_scores) * 100, 1)
+
+
+def _relative_perf(score: float, sorted_scores: list) -> float:
+    """오늘날 최상위권(상위 1%) 대비 상대 성능 (0~100).
+    PC 등급 산정은 이 값을 쓴다 — '역대 전체' 중 순위가 아니라 '지금 살 수 있는 좋은 부품'
+    대비 얼마나 좋은지를 봐야 등급이 실제 체감 성능과 맞게 갈린다."""
+    if score <= 0 or not sorted_scores:
+        return 0
+    anchor = sorted_scores[max(0, int(len(sorted_scores) * 0.99) - 1)]
+    if anchor <= 0:
+        return 0
+    return round(min(100, score / anchor * 100), 1)
 
 
 # 부품 등급(게임식 레어도) 절대점수 컷 — 벤치 DB에 구형이 많아 백분위 대신 사용
@@ -135,25 +150,28 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
     for p in parts:
         cats.setdefault(p["category"], []).append(p)
 
-    # ── 성능 (벤치마크 백분위, 목적별 가중치) ──
-    cpu_pct, gpu_pct = 0.0, 0.0
+    # ── 성능 (오늘날 최상위권 대비 상대 성능, 목적별 가중치) ──
+    cpu_pct, gpu_pct = 0.0, 0.0  # 부품 카드 희귀도 연출용 (역대 전체 기준 백분위)
+    cpu_rel, gpu_rel = 0.0, 0.0  # 등급 산정용 (오늘날 상위 1% 대비 상대 성능)
     cpu_bench, gpu_bench = 0, 0
     if "cpu" in cats:
         c = cats["cpu"][0]
         cpu_bench = _cpu_bench(f"{c['brand']} {c['model']}".strip())
         cpu_pct = _percentile(cpu_bench, _CPU_SORTED)
+        cpu_rel = _relative_perf(cpu_bench, _CPU_SORTED)
     if "gpu" in cats:
         g = cats["gpu"][0]
         gpu_bench = _gpu_bench(f"{g['brand']} {g['model']}".strip())
         gpu_pct = _percentile(gpu_bench, _GPU_SORTED)
+        gpu_rel = _relative_perf(gpu_bench, _GPU_SORTED)
 
     def performance_for(weights: dict) -> float:
-        if gpu_pct > 0 and cpu_pct > 0:
-            return cpu_pct * weights["cpu"] + gpu_pct * weights["gpu"]
-        if cpu_pct > 0:
-            return cpu_pct * 0.8  # 내장그래픽 가정 페널티
-        if gpu_pct > 0:
-            return gpu_pct * 0.5
+        if gpu_rel > 0 and cpu_rel > 0:
+            return cpu_rel * weights["cpu"] + gpu_rel * weights["gpu"]
+        if cpu_rel > 0:
+            return cpu_rel * 0.8  # 내장그래픽 가정 페널티
+        if gpu_rel > 0:
+            return gpu_rel * 0.5
         return 0
 
     performance = performance_for(PURPOSE_WEIGHTS.get(purpose, PURPOSE_WEIGHTS["gaming"]))
@@ -161,16 +179,16 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
     # 목적별 성능 (검사실 레이더용)
     purpose_scores = {pk: round(performance_for(pw)) for pk, pw in PURPOSE_WEIGHTS.items()}
 
-    # ── 밸런스 (CPU-GPU 백분위 격차) ──
+    # ── 밸런스 (CPU-GPU 상대 성능 격차) ──
     bottleneck = None
-    if cpu_pct > 0 and gpu_pct > 0:
-        gap = abs(cpu_pct - gpu_pct)
+    if cpu_rel > 0 and gpu_rel > 0:
+        gap = abs(cpu_rel - gpu_rel)
         balance = max(0, 100 - gap * 1.5)
         if gap > 25:
-            weaker = "CPU" if cpu_pct < gpu_pct else "GPU"
-            bottleneck = f"{weaker} 병목 주의 — CPU 백분위 {cpu_pct:.0f} vs GPU 백분위 {gpu_pct:.0f}"
+            weaker = "CPU" if cpu_rel < gpu_rel else "GPU"
+            bottleneck = f"{weaker} 병목 주의 — CPU 성능 {cpu_rel:.0f} vs GPU 성능 {gpu_rel:.0f} (오늘날 상위권 대비)"
     else:
-        balance = 50 if (cpu_pct or gpu_pct) else 0
+        balance = 50 if (cpu_rel or gpu_rel) else 0
 
     # ── 호환성 ──
     compat = check_compatibility(parts)
@@ -191,23 +209,26 @@ def score_build(parts: list[dict], purpose: str = "gaming", purchase_cost: float
         value = round(min(100, performance / max(cost_man, 1) * 60))
 
     # ── 종합 ──
+    # 완성/호환은 "완성 PC"라면 거의 항상 100에 가까워 실질적으로 상수에 가깝다 —
+    # 여기 비중을 크게 주면 부품 품질과 무관하게 다 같은 등급으로 몰린다.
+    # 실제 체감 품질을 가르는 성능·밸런스·가성비 비중을 더 크게 둔다.
     def overall_of(perf: float, bal: float) -> float:
         if value is not None:
-            return round(perf * 0.30 + bal * 0.15 + compat_score * 0.25 + completeness * 0.15 + value * 0.15)
-        return round(perf * 0.35 + bal * 0.15 + compat_score * 0.25 + completeness * 0.25)
+            return round(perf * 0.40 + bal * 0.15 + compat_score * 0.15 + completeness * 0.10 + value * 0.20)
+        return round(perf * 0.50 + bal * 0.20 + compat_score * 0.15 + completeness * 0.15)
 
     overall = overall_of(performance, balance)
 
     # ── 업그레이드 추천 (뭘 바꾸면 몇 점 오르는지) ──
     upgrades = []
-    if cpu_pct > 0 and gpu_pct > 0 and abs(cpu_pct - gpu_pct) > 10:
-        stronger = max(cpu_pct, gpu_pct)
-        weaker_name = "CPU" if cpu_pct < gpu_pct else "GPU"
+    if cpu_rel > 0 and gpu_rel > 0 and abs(cpu_rel - gpu_rel) > 10:
+        stronger = max(cpu_rel, gpu_rel)
+        weaker_name = "CPU" if cpu_rel < gpu_rel else "GPU"
         new_perf = stronger  # 약한 쪽을 강한 쪽 수준으로 맞췄다고 가정
         gain = overall_of(new_perf, 100) - overall
         if gain > 0:
             upgrades.append({
-                "message": f"{weaker_name}를 상대 백분위 {stronger:.0f} 수준으로 업그레이드하면 밸런스가 맞습니다.",
+                "message": f"{weaker_name}를 상대 성능 {stronger:.0f} 수준으로 업그레이드하면 밸런스가 맞습니다.",
                 "gain": gain,
             })
     for slot in missing:

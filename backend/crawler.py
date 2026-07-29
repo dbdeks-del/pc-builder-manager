@@ -16,7 +16,7 @@ from urllib.parse import quote
 import aiohttp
 from bs4 import BeautifulSoup
 
-from compatibility import _normalize as _norm
+from compatibility import KOREAN_ALIASES
 
 HEADERS = {
     "User-Agent": (
@@ -34,17 +34,49 @@ FULLPC_RE = re.compile(
 )
 # 고장/부품용 매물 (정상품 시세를 왜곡)
 BROKEN_RE = re.compile(r"고장|불량|파손|부품용|수리용|뻥파워|AS용", re.IGNORECASE)
+# "삽니다/구합니다" 같은 매수 글 — 판매 호가가 아니라 사려는 사람이 부르는 값이라
+# 파는 사람 시세와는 성격이 달라서 같이 섞으면 왜곡된다.
+BUY_REQUEST_RE = re.compile(r"삽니다|구합니다|구매합니다|찾습니다|매입합니다|구입합니다", re.IGNORECASE)
+
+# "본체/세트" 같은 단어 없이도 다른 부품을 같이 얹어 파는 번들 매물이 있다
+# (예: CPU를 검색했는데 "라이젠5 5600 + RTX2060 + RAM16GB" 매물) — 이런 건
+# 값이 부품 하나 값이 아니라 여러 개를 합친 값이라 시세를 크게 왜곡한다.
+# 검색 카테고리와 다른 카테고리의 부품이 같이 언급되면 번들로 보고 제외한다.
+_GPU_HINT = r"rtx\s?\d{3,4}|gtx\s?\d{3,4}|\brx\s?\d{3,4}"
+_CPU_HINT = r"라이젠|ryzen|인텔\s?i[3579]|intel\s?i[3579]|펜티엄|pentium"
+_MEM_STORAGE_HINT = r"ram\s?\d+\s?gb|\d+\s?gb\s?ram|메모리\s?\d+\s?gb|ssd\s?\d{2,4}\s?gb|\d{2,4}\s?gb\s?ssd|hdd\s?\d"
+BUNDLE_HINTS = {
+    "cpu": re.compile(f"{_GPU_HINT}|{_MEM_STORAGE_HINT}", re.IGNORECASE),
+    "gpu": re.compile(f"{_CPU_HINT}|{_MEM_STORAGE_HINT}", re.IGNORECASE),
+    "ram": re.compile(f"{_CPU_HINT}|{_GPU_HINT}", re.IGNORECASE),
+    "ssd": re.compile(f"{_CPU_HINT}|{_GPU_HINT}", re.IGNORECASE),
+    "hdd": re.compile(f"{_CPU_HINT}|{_GPU_HINT}", re.IGNORECASE),
+    "motherboard": re.compile(f"{_CPU_HINT}|{_GPU_HINT}", re.IGNORECASE),
+}
 
 MIN_PRICE = 10_000
 MAX_PRICE = 5_000_000
 
 
+# 공백으로 붙는 GPU 변형 접미사 — 쿼리에 없는데 매물에 붙어있으면 다른 모델(다른 시세대)로 간주
+VARIANT_SUFFIXES = {"ti", "super", "xt", "s"}
+
+
+def _title_words(s: str) -> list[str]:
+    """소문자화 + 한글 별칭 치환 후 단어 단위로 분리 (공백을 없애버리지 않아 '5600'과
+    '5600x'를 서로 다른 단어로 구분할 수 있다 — model_tokens/is_relevant가 함께 쓴다)"""
+    s = s.lower()
+    for ko, en in KOREAN_ALIASES:
+        s = s.replace(ko, en)
+    s = re.sub(r"[^a-z0-9가-힣]+", " ", s)
+    return s.split()
+
+
 def model_tokens(query: str) -> list[str]:
     """모델 식별력이 있는 토큰(숫자 포함 단어)만 추출. 예: 'GTX 1660 6GB' → ['gtx', '1660']"""
     tokens = []
-    for t in re.split(r"[\s\-/]+", query.lower()):
-        t = re.sub(r"[^a-z0-9]", "", t)
-        if not t or t in ("gb", "tb", "중고"):
+    for t in _title_words(query):
+        if t in ("gb", "tb", "중고"):
             continue
         # 용량 표기(6gb, 500gb)는 식별 토큰에서 제외
         if re.fullmatch(r"\d+(gb|tb|g|t)", t):
@@ -54,16 +86,31 @@ def model_tokens(query: str) -> list[str]:
 
 
 def is_relevant(title: str, tokens: list[str]) -> bool:
-    """제목에 모델 토큰이 모두 포함돼 있는지 (공백/기호 무시)"""
-    t = _norm(title)
+    """모델 토큰이 제목에 '단어 단위로 정확히' 포함돼 있는지 확인.
+    예전엔 공백을 다 지우고 부분일치로 봐서 '5600' 검색에 '5600X'/'5600G' 같은
+    완전히 다른(시세도 다른) 모델까지 섞여 들어오는 문제가 있었다 — 단어 경계를
+    지키고, Ti/Super/XT처럼 띄어써지는 변형 접미사도 쿼리에 없으면 걸러낸다."""
+    title_words = _title_words(title)
+    query_words = set(tokens)
     digit_tokens = [tok for tok in tokens if any(c.isdigit() for c in tok)]
     check = digit_tokens or tokens
-    return all(tok in t for tok in check)
+    if not all(tok in title_words for tok in check):
+        return False
+    for tok in digit_tokens:
+        idx = title_words.index(tok)
+        nxt = title_words[idx + 1] if idx + 1 < len(title_words) else None
+        if nxt in VARIANT_SUFFIXES and nxt not in query_words:
+            return False
+    for tok in tokens:
+        if tok in VARIANT_SUFFIXES and tok not in title_words:
+            return False
+    return True
 
 
-def clean_listings(listings: list[dict], query: str, parts_only: bool = True) -> list[dict]:
-    """관련성/완본체/가격 필터"""
+def clean_listings(listings: list[dict], query: str, parts_only: bool = True, category: str = "") -> list[dict]:
+    """관련성/완본체/번들/가격 필터"""
     tokens = model_tokens(query)
+    bundle_re = BUNDLE_HINTS.get(category) if parts_only else None
     out = []
     for it in listings:
         price = it.get("price", 0)
@@ -73,6 +120,10 @@ def clean_listings(listings: list[dict], query: str, parts_only: bool = True) ->
         if parts_only and FULLPC_RE.search(title):
             continue
         if parts_only and BROKEN_RE.search(title):
+            continue
+        if parts_only and BUY_REQUEST_RE.search(title):
+            continue
+        if bundle_re and bundle_re.search(title):
             continue
         if tokens and not is_relevant(title, tokens):
             continue
@@ -200,7 +251,7 @@ async def get_part_prices(brand: str, model: str, category: str) -> list[dict]:
         if isinstance(r, list):
             all_results.extend(r)
 
-    valid = clean_listings(all_results, query, parts_only=(category != "etc"))
+    valid = clean_listings(all_results, query, parts_only=(category != "etc"), category=category)
     # 중고 먼저, 가격 오름차순
     valid.sort(key=lambda x: (x.get("condition") != "used", x.get("price", 0)))
     return valid

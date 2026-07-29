@@ -23,6 +23,15 @@ def frontend_path() -> str:
     return os.path.join(BASE_DIR, "..", "frontend", "index.html")
 
 
+def pwa_dir() -> str:
+    """frontend/pwa/ 폴더 경로 — 서버 없이 휴대폰 브라우저 단독으로 도는 오프라인 PWA.
+    /pwa 경로로 정적 서빙해서, 휴대폰에서 최초 1회만 이 서버에 접속해 설치하면
+    그 뒤로는 서비스워커 캐시로 서버 없이 동작한다."""
+    if _FROZEN:
+        return os.path.join(BASE_DIR, "frontend", "pwa")
+    return os.path.join(BASE_DIR, "..", "frontend", "pwa")
+
+
 def data_dir() -> str:
     """DB 파일처럼 실행할 때마다 남아있어야 하는 데이터를 저장할 폴더.
     resource_path()의 BASE_DIR(_MEIPASS)는 exe를 새로 켤 때마다 다시 풀리는 임시

@@ -14,6 +14,10 @@ env/
 # SQLite DB
 backend/*.db
 backend/*.sqlite
+/pc_builder.db
+
+# 로컬 빌드 실행파일 (커밋하지 않음 — GitHub Actions가 빌드/배포)
+*.exe
 
 # First-run install marker
 backend/.installed

@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 빌드 스펙 — 단일 실행파일(.exe) 생성
 # 사용법: pyinstaller pc_flipping_manager.spec  (backend/ 폴더에서 실행)
+import glob
+import os
 from PyInstaller.utils.hooks import collect_all
 
 datas = [
@@ -8,6 +10,10 @@ datas = [
     ("benchmark_db.json", "."),
     ("../frontend/index.html", "frontend"),
 ]
+# 오프라인 PWA(frontend/pwa/*) — 폴더 안 파일이 늘어나도 자동으로 다 딸려가게 glob으로 수집
+for f in glob.glob("../frontend/pwa/*"):
+    if os.path.isfile(f):
+        datas.append((f, "frontend/pwa"))
 binaries = []
 hiddenimports = []
 
